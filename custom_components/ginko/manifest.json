@@ -1,0 +1,13 @@
+{
+  "domain": "ginko",
+  "name": "Ginko Besançon",
+  "version": "1.1.1",
+  "codeowners": ["@steph9742"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/steph9742/ginko-ha",
+  "issue_tracker": "https://github.com/steph9742/ginko-ha/issues",
+  "iot_class": "cloud_polling",
+  "requirements": [],
+  "homeassistant": "2024.1.0"
+}

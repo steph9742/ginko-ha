@@ -1,0 +1,168 @@
+{
+  "title": "Ginko Besançon",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Clé API",
+        "description": "Demandez votre clé API à **ginko.support-ssi@keolis.com** et copiez-la ici.",
+        "data": {
+          "api_key": "Clé API"
+        },
+        "data_description": {
+          "api_key": "La clé sera validée en appelant l'API avant de continuer."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Ré-authentification Ginko",
+        "description": "Votre clé API Ginko n'est plus valide. Saisissez une nouvelle clé pour rétablir l'intégration.",
+        "data": {
+          "api_key": "Nouvelle clé API"
+        }
+      },
+      "mode": {
+        "title": "Mode de surveillance",
+        "description": "**Arrêt par nom** — affiche tous les passages d'un lieu (toutes lignes et tous sens confondus). Un « lieu » regroupe plusieurs arrêts physiques portant le même nom, par exemple les deux quais d'une route ou les arrêts bus et tram d'une même place.\n\n**Arrêt par ligne et direction** — cible un arrêt physique précis : vous choisissez le nom du lieu, puis la ligne, puis le sens. Utile si vous souhaitez un capteur dédié à une seule ligne avec son prochain départ comme valeur d'état.\n\n**Arrêts proches d'une personne** — cible une entité géolocalisée (le plus souvent une personne suivie par Home Assistant) et affiche les arrêts les plus proches de sa position, avec leurs prochains passages.\n\n**Infotrafic d'une ligne** — état de service et messages de perturbation pour une ligne donnée.\n\n**Positions des véhicules** — localisation en temps réel des bus et trams d'une ligne.",
+        "data": {
+          "mode": "Mode",
+          "name": "Nom de cette entrée (optionnel)"
+        },
+        "data_description": {
+          "name": "Affiché dans la liste des intégrations. Laissez vide pour utiliser le nom de l'arrêt."
+        }
+      },
+      "lieu": {
+        "title": "Arrêt par nom",
+        "description": "L'API effectue une correspondance approximative : « Victor Hugo », « Chamars », etc.",
+        "data": {
+          "nom": "Nom de l'arrêt",
+          "nb_passages": "Passages à récupérer"
+        },
+        "data_description": {
+          "nom": "Nom partiel accepté — l'API retournera les passages du premier arrêt correspondant.",
+          "nb_passages": "Entre 1 et 5. Chaque passage correspond à un prochain bus / tram."
+        }
+      },
+      "liste": {
+        "title": "Nom de l'arrêt",
+        "description": "Entrez le nom de l'arrêt. L'étape suivante n'affichera que les lignes qui y passent.\n\nVous pouvez ajouter plusieurs combinaisons arrêt / ligne / direction dans le même capteur.",
+        "data": {
+          "nom": "Nom de l'arrêt",
+          "nb_passages": "Passages à récupérer"
+        },
+        "data_description": {
+          "nom": "Correspondance approximative — ex : « Victor Hugo », « Chamars ».",
+          "nb_passages": "Visible uniquement lors du premier ajout — s'applique à toutes les lignes."
+        }
+      },
+      "liste_ligne": {
+        "title": "Choisir la ligne",
+        "description": "{info}",
+        "data": {
+          "ligne": "Ligne"
+        }
+      },
+      "liste_sens": {
+        "title": "Choisir le sens",
+        "description": "{info}",
+        "data": {
+          "sens": "Direction",
+          "add_another": "Ajouter une autre combinaison après celle-ci"
+        }
+      },
+      "person": {
+        "title": "Arrêts proches d'une personne",
+        "description": "Sélectionnez une entité **person** (ex : `person.stephane`). La carte affichera les arrêts Ginko situés à moins de 500 m de sa position GPS, mis à jour en temps réel.",
+        "data": {
+          "person_entity_id": "Entité personne",
+          "nb_passages": "Passages par arrêt",
+          "max_stops": "Nombre d'arrêts maximum"
+        },
+        "data_description": {
+          "person_entity_id": "Doit être une entité de domaine `person` avec position GPS disponible.",
+          "nb_passages": "Entre 1 et 5 passages affichés par arrêt.",
+          "max_stops": "Limite le nombre d'arrêts retournés (max 10)."
+        }
+      },
+      "scan_config": {
+        "title": "Fréquence de mise à jour",
+        "description": "Le rafraîchissement automatique adapte la fréquence au type de véhicule : **10 s pour les trams**, **30 s pour les bus**.",
+        "data": {
+          "scan_auto": "Rafraîchissement automatique"
+        }
+      },
+      "scan_manual": {
+        "title": "Intervalle manuel",
+        "description": "Choisissez la fréquence de mise à jour.",
+        "data": {
+          "scan_interval": "Intervalle (secondes)"
+        },
+        "data_description": {
+          "scan_interval": "Minimum 10 s, maximum 300 s."
+        }
+      },
+      "suivi_ligne": {
+        "title": "Positions des véhicules",
+        "description": "Sélectionnez la ligne à suivre.\n\nL'intervalle automatique est de **10 s pour les trams** (T1, T2…) et **15 s pour les bus**.",
+        "data": {
+          "id_ligne": "Ligne à suivre",
+          "scan_auto": "Rafraîchissement automatique"
+        }
+      },
+      "suivi_scan": {
+        "title": "Intervalle de rafraîchissement",
+        "description": "Choisissez la fréquence de mise à jour manuelle.",
+        "data": {
+          "scan_interval": "Intervalle (secondes)"
+        },
+        "data_description": {
+          "scan_interval": "Minimum 10 s, maximum 300 s."
+        }
+      }
+    },
+    "error": {
+      "invalid_api_key": "Clé API invalide ou accès refusé par le serveur.",
+      "cannot_connect": "Impossible de joindre api.ginko.voyage. Vérifiez votre connexion.",
+      "unknown": "Erreur inattendue lors de la validation."
+    },
+    "abort": {
+      "already_configured": "Cette configuration est déjà enregistrée.",
+      "reauth_successful": "La ré-authentification a réussi."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Modifier la configuration",
+        "description": "Modifiez le nombre de passages ou le mode de rafraîchissement.",
+        "data": {
+          "nb_passages": "Passages à récupérer (1–5)",
+          "scan_auto": "Rafraîchissement automatique",
+          "add_item": "Ajouter une combinaison arrêt / ligne / direction"
+        },
+        "data_description": {
+          "scan_auto": "Tram : 10 s, bus : 30 s (ou 15 s en mode suivi). Décochez pour définir un intervalle manuellement.",
+          "add_item": "Mode liste uniquement."
+        }
+      },
+      "options_scan": {
+        "title": "Intervalle de rafraîchissement",
+        "description": "Choisissez la fréquence de mise à jour manuelle. L'intégration redémarre automatiquement.",
+        "data": {
+          "scan_interval": "Intervalle (secondes)"
+        },
+        "data_description": {
+          "scan_interval": "Minimum 10 s, maximum 300 s."
+        }
+      },
+      "add_item": {
+        "title": "Ajouter une combinaison",
+        "data": {
+          "nom": "Nom de l'arrêt",
+          "id_ligne": "Identifiant de la ligne",
+          "sens_aller": "Sens aller",
+          "add_another": "Ajouter une autre combinaison"
+        }
+      }
+    }
+  }
+}

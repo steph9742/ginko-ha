@@ -1,0 +1,168 @@
+{
+  "title": "Ginko Besançon",
+  "config": {
+    "step": {
+      "user": {
+        "title": "API Key",
+        "description": "Request your API key from **ginko.support-ssi@keolis.com** and paste it here.",
+        "data": {
+          "api_key": "API Key"
+        },
+        "data_description": {
+          "api_key": "The key will be validated by calling the API before continuing."
+        }
+      },
+      "mode": {
+        "title": "Monitoring mode",
+        "description": "**Stop by name** — shows all departures at a location (all lines and directions combined). A \"location\" groups several physical stops sharing the same name, e.g. both sides of a road or the bus and tram stops on the same square.\n\n**Stop by line and direction** — targets one specific physical stop: you pick the location name, then the line, then the direction. Useful when you want a sensor dedicated to a single line with its next departure as the state value.\n\n**Line disruptions** — service status and disruption messages for a given line.\n\n**Vehicle positions** — real-time location of buses and trams on a line.",
+        "data": {
+          "mode": "Mode",
+          "name": "Entry name (optional)"
+        },
+        "data_description": {
+          "name": "Displayed in the integrations list. Leave empty to use the stop name."
+        }
+      },
+      "lieu": {
+        "title": "Stop by name",
+        "description": "The API performs fuzzy matching: \"Victor Hugo\", \"Chamars\", etc.",
+        "data": {
+          "nom": "Stop name",
+          "nb_passages": "Departures to retrieve"
+        },
+        "data_description": {
+          "nom": "Partial names accepted — the API will return departures from the first matching stop.",
+          "nb_passages": "Between 1 and 5. Each departure corresponds to an upcoming bus or tram."
+        }
+      },
+      "liste": {
+        "title": "Stop name",
+        "description": "Enter the stop name. The next step will only display the lines serving it.\n\nYou can add multiple stop / line / direction combinations in the same sensor.",
+        "data": {
+          "nom": "Stop name",
+          "nb_passages": "Departures to retrieve"
+        },
+        "data_description": {
+          "nom": "Fuzzy matching — e.g. \"Victor Hugo\", \"Chamars\".",
+          "nb_passages": "Visible only during the first setup — applies to all lines."
+        }
+      },
+      "liste_ligne": {
+        "title": "Choose the line",
+        "description": "{info}",
+        "data": {
+          "ligne": "Line"
+        }
+      },
+      "liste_sens": {
+        "title": "Choose direction",
+        "description": "{info}",
+        "data": {
+          "sens": "Direction",
+          "add_another": "Add another combination after this one"
+        }
+      },
+      "person": {
+        "title": "Nearby stops for a person",
+        "description": "Select a **person** entity (e.g. `person.stephane`). The card will display Ginko stops within 500 m of their GPS location, updated in real time.",
+        "data": {
+          "person_entity_id": "Person entity",
+          "nb_passages": "Departures per stop",
+          "max_stops": "Maximum number of stops"
+        },
+        "data_description": {
+          "person_entity_id": "Must be a `person` domain entity with GPS location available.",
+          "nb_passages": "Between 1 and 5 departures per stop.",
+          "max_stops": "Limits the number of returned stops (max 10)."
+        }
+      },
+      "scan_config": {
+        "title": "Update frequency",
+        "description": "Automatic refresh adapts to the vehicle type: **10 s for trams**, **30 s for buses**.",
+        "data": {
+          "scan_auto": "Automatic refresh"
+        }
+      },
+      "scan_manual": {
+        "title": "Manual interval",
+        "description": "Choose the update frequency.",
+        "data": {
+          "scan_interval": "Interval (seconds)"
+        },
+        "data_description": {
+          "scan_interval": "Minimum 10 s, maximum 300 s."
+        }
+      },
+      "suivi_ligne": {
+        "title": "Vehicle positions",
+        "description": "Select the line to track.\n\nAutomatic interval is **10 s for trams** (T1, T2…) and **15 s for buses**.",
+        "data": {
+          "id_ligne": "Line to track",
+          "scan_auto": "Automatic refresh"
+        }
+      },
+      "suivi_scan": {
+        "title": "Refresh interval",
+        "description": "Choose the manual update frequency.",
+        "data": {
+          "scan_interval": "Interval (seconds)"
+        },
+        "data_description": {
+          "scan_interval": "Minimum 10 s, maximum 300 s."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Ginko re-authentication",
+        "description": "Your Ginko API key is no longer valid. Enter a new key to restore the integration.",
+        "data": {
+          "api_key": "New API key"
+        }
+      }
+    },
+    "error": {
+      "invalid_api_key": "Invalid API key or access denied by the server.",
+      "cannot_connect": "Unable to reach api.ginko.voyage. Check your connection.",
+      "unknown": "Unexpected error during validation."
+    },
+    "abort": {
+      "already_configured": "This configuration is already set up.",
+      "reauth_successful": "Re-authentication was successful."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Edit configuration",
+        "description": "Modify the number of departures or refresh mode.",
+        "data": {
+          "nb_passages": "Departures to retrieve (1–5)",
+          "scan_auto": "Automatic refresh",
+          "add_item": "Add a stop / line / direction combination"
+        },
+        "data_description": {
+          "scan_auto": "Tram: 10 s, bus: 30 s (or 15 s in tracking mode). Disable to set a manual interval.",
+          "add_item": "List mode only."
+        }
+      },
+      "options_scan": {
+        "title": "Refresh interval",
+        "description": "Choose the manual update frequency. The integration will restart automatically.",
+        "data": {
+          "scan_interval": "Interval (seconds)"
+        },
+        "data_description": {
+          "scan_interval": "Minimum 10 s, maximum 300 s."
+        }
+      },
+      "add_item": {
+        "title": "Add a combination",
+        "data": {
+          "nom": "Stop name",
+          "id_ligne": "Line ID",
+          "sens_aller": "Outbound direction",
+          "add_another": "Add another combination"
+        }
+      }
+    }
+  }
+}

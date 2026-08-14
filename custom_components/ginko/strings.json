@@ -1,0 +1,112 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Ginko — Clé API",
+        "description": "Demandez votre clé API à ginko.support-ssi@keolis.com et copiez-la ici.",
+        "data": {
+          "api_key": "Clé API"
+        }
+      },
+      "mode": {
+        "title": "Ginko — Mode de surveillance",
+        "description": "Choisissez comment surveiller les passages.",
+        "data": {
+          "mode": "Mode",
+          "name": "Nom de cette configuration"
+        }
+      },
+      "scan_config": {
+        "title": "Fréquence de mise à jour",
+        "description": "Le rafraîchissement automatique adapte la fréquence au type de véhicule : 10 s pour les trams, 30 s pour les bus.",
+        "data": {
+          "scan_auto": "Rafraîchissement automatique"
+        }
+      },
+      "scan_manual": {
+        "title": "Intervalle manuel",
+        "description": "Choisissez la fréquence de mise à jour.",
+        "data": {
+          "scan_interval": "Intervalle (secondes)"
+        }
+      },
+      "suivi_ligne": {
+        "title": "Ginko — Positions des véhicules",
+        "data": {
+          "id_ligne": "Ligne à suivre",
+          "scan_auto": "Rafraîchissement automatique (tram : 10 s, bus : 15 s)"
+        }
+      },
+      "suivi_scan": {
+        "title": "Ginko — Intervalle de rafraîchissement",
+        "description": "Choisissez la fréquence de mise à jour.",
+        "data": {
+          "scan_interval": "Intervalle (secondes)"
+        }
+      },
+      "lieu": {
+        "title": "Ginko — Arrêt par nom",
+        "description": "L'API effectue une correspondance approximative sur le nom de l'arrêt.",
+        "data": {
+          "nom": "Nom de l'arrêt (ex : Victor Hugo)",
+          "nb_passages": "Nombre de passages à récupérer (1–5)"
+        }
+      },
+      "liste": {
+        "title": "Ginko — Arrêt par ligne et direction",
+        "description": "Sélectionnez un arrêt puis choisissez la ligne et le sens souhaités. Vous pouvez ajouter plusieurs combinaisons arrêt / ligne / direction dans le même capteur.",
+        "data": {
+          "nom": "Nom de l'arrêt",
+          "id_ligne": "Identifiant de la ligne (ex : L1, T1)",
+          "sens_aller": "Sens aller",
+          "nb_passages": "Nombre de passages (1–5)",
+          "add_another": "Ajouter une autre combinaison"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Ré-authentification Ginko",
+        "description": "Votre clé API Ginko n'est plus valide. Saisissez une nouvelle clé pour rétablir l'intégration.",
+        "data": {
+          "api_key": "Nouvelle clé API"
+        }
+      }
+    },
+    "error": {
+      "invalid_api_key": "Clé API invalide ou accès refusé.",
+      "cannot_connect": "Impossible de se connecter à l'API Ginko.",
+      "unknown": "Erreur inattendue."
+    },
+    "abort": {
+      "already_configured": "Cette configuration est déjà enregistrée.",
+      "reauth_successful": "La ré-authentification a réussi."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Modifier la configuration",
+        "data": {
+          "nb_passages": "Nombre de passages (1–5)",
+          "scan_auto": "Rafraîchissement automatique",
+          "add_item": "Ajouter une combinaison arrêt / ligne / direction"
+        }
+      },
+      "options_scan": {
+        "title": "Intervalle de rafraîchissement",
+        "description": "Choisissez la fréquence de mise à jour.",
+        "data": {
+          "scan_interval": "Intervalle (secondes)"
+        }
+      },
+      "add_item": {
+        "title": "Ajouter une ligne",
+        "data": {
+          "nom": "Nom de l'arrêt",
+          "id_ligne": "Identifiant de la ligne",
+          "sens_aller": "Sens aller",
+          "add_another": "Ajouter une autre ligne"
+        }
+      }
+    }
+  }
+}
