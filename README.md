@@ -37,7 +37,7 @@ Les données sont exposées sous forme de capteurs (`sensor`) exploitables dans 
 
 ---
 
-## ✅ Prérequis
+## Prérequis
 
 Avant de commencer, assurez-vous d'avoir :
 
