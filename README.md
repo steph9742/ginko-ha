@@ -50,10 +50,19 @@ Avant de commencer, assurez-vous d'avoir :
 > 💡 **Obtenir une clé API :** Rendez-vous sur le portail api Ginko (https://api.ginko.voyage/#prez) et écrivez à ginko.support-ssi@keolis.com en décrivant votre usage (personnel / domotique).
 
 ---
-
 ## Installation
 
-### Étape 1 — Copier les fichiers
+### Méthode 1 — HACS (recommandée)
+
+1. Dans HACS, ouvrez le menu **⋮** (en haut à droite) → **Dépôts personnalisés**
+2. Ajoutez l'URL du dépôt : `https://github.com/steph9742/ginko-ha`
+   avec la catégorie **Integration**
+3. Recherchez **"Ginko Besançon"** dans HACS et cliquez sur **Télécharger**
+4. Redémarrez Home Assistant depuis **Paramètres → Système → Redémarrer**
+
+> Les mises à jour apparaîtront ensuite automatiquement dans HACS à chaque nouvelle version.
+
+### Méthode 2 — Manuelle
 
 Copiez le dossier `custom_components/ginko/` dans le répertoire `config/custom_components/` de votre installation Home Assistant. La structure doit ressembler à ceci :
 
@@ -68,11 +77,9 @@ config/
         └── ...
 ```
 
-### Étape 2 — Redémarrer Home Assistant
+Puis redémarrez Home Assistant depuis **Paramètres → Système → Redémarrer**.
 
-Après avoir copié les fichiers, redémarrez Home Assistant depuis **Paramètres → Système → Redémarrer**.
-
-### Étape 3 — Ajouter l'intégration
+### Ajouter l'intégration
 
 1. Allez dans **Paramètres → Appareils et services → Intégrations**
 2. Cliquez sur **+ Ajouter une intégration**
