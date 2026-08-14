@@ -6,21 +6,21 @@
 
 ## Sommaire
 
-1. [Description](#-description)
-2. [Prérequis](#-prérequis)
-3. [Installation](#-installation)
-4. [Configuration des modes](#-configuration-des-modes)
+1. [Description](#description)
+2. [Prérequis](#prérequis)
+3. [Installation](#installation)
+4. [Configuration des modes](#configuration-des-modes)
    - [Mode 1 — Arrêt par nom](#mode-1--arrêt-par-nom-mode_lieu)
    - [Mode 2 — Lignes spécifiques](#mode-2--lignes-spécifiques-mode_liste)
    - [Mode 3 — Arrêts proches d'une personne](#mode-3--arrêts-proches-dune-personne-mode_person)
    - [Mode 4 — Suivi d'une ligne](#mode-4--suivi-dune-ligne-mode_ligne)
    - [Mode 5 — Positions des bus](#mode-5--positions-des-bus-mode_suivi_ligne)
-5. [Capteurs globaux](#-capteurs-globaux)
-6. [Cartes Lovelace](#-cartes-lovelace)
-7. [Référence des attributs des capteurs](#-référence-des-attributs-des-capteurs)
-8. [Options après installation](#-options-après-installation)
-9. [Exemples d'automatisations](#-exemples-dautomatisations)
-10. [Dépannage](#-dépannage)
+5. [Capteurs globaux](#capteurs-globaux)
+6. [Cartes Lovelace](#cartes-lovelace)
+7. [Référence des attributs des capteurs](#référence-des-attributs-des-capteurs)
+8. [Options après installation](#options-après-installation)
+9. [Exemples d'automatisations](#exemples-dautomatisations)
+10. [Dépannage](#dépannage)
 
 ---
 
