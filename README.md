@@ -98,7 +98,7 @@ L'intégration propose cinq modes distincts. Vous pouvez créer plusieurs entré
 |---|---|
 | Nom de l'arrêt | Liste déroulante avec autocomplétion |
 | Nombre de passages | De 1 à 5 (défaut : 3) |
-| Intervalle de rafraîchissement | De 15 à 300 secondes (défaut : 30 s) |
+| Intervalle de rafraîchissement | Automatique (tram : 10 s, bus : 30 s) ou manuel de 10 à 300 |
 
 **Capteur créé :**
 - `sensor.ginko_<nom_arret>`
@@ -139,7 +139,7 @@ Pour chaque entrée, vous choisissez successivement :
 | Entité personne | Sélecteur d'entité `person.*` |
 | Nombre de passages | De 1 à 5 par arrêt |
 | Nombre d'arrêts max | De 1 à 10 (défaut : 5) |
-| Intervalle de rafraîchissement | De 15 à 300 secondes (défaut : 60 s) |
+| Intervalle de rafraîchissement | Automatique (tram : 10 s, bus : 30 s) ou manuel de 10 à 300 |
 
 **Capteur créé :**
 - `sensor.ginko_proximite_<person_name>`
@@ -210,7 +210,7 @@ Ces deux capteurs sont créés **automatiquement** lors de la première configur
 
 L'intégration inclut trois cartes personnalisées pour visualiser les données dans votre tableau de bord. Elles sont automatiquement enregistrées au démarrage de Home Assistant.
 
-> 💡 Les ressources JS sont versionnées automatiquement (?v=<version>) : après une mise à jour de l'intégration, un simple rechargement de la page suffit.
+> 💡 Les ressources JS sont versionnées automatiquement ('?v=<version>') : après une mise à jour de l'intégration, un simple rechargement de la page suffit.
 
 ---
 
@@ -310,8 +310,8 @@ entity: sensor.ginko_bus_ligne_7
 | `couleurFond` | string | Couleur de fond de la ligne (hex) |
 | `couleurTexte` | string | Couleur du texte de la ligne (hex) |
 | `modeTransport` | string | Type de transport (bus, tram…) |
-| `typeDeTemp`s | int | 0 = temps relatif, 1 = heure absolue, 2 = texte de remplacement |
-| `déviation | bool | true si le passage est remplacé par un texte (« Déviation », « Travaux »…) |
+| `typeDeTemps` | int | 0 = temps relatif, 1 = heure absolue, 2 = texte de remplacement |
+| `déviation` | bool | true si le passage est remplacé par un texte (« Déviation », « Travaux »…) |
 
 ### Mode Personne (`sensor.ginko_proximite_<person_name>`)
 
@@ -415,11 +415,12 @@ Options disponibles selon le mode :
 **Symptôme :** L'intégration refuse de s'ajouter ou affiche une erreur d'authentification.
 
 **Solutions :**
-- Vérifiez votre clé sur le portail développeur Ginko
+- Vérifiez votre clé sur le portail api Ginko
 - Assurez-vous qu'il n'y a pas d'espace au début ou à la fin de la clé
-- Essayez de regénérer une nouvelle clé sur le portail
+- Si la clé ne fonctionne plus, contactez **ginko.support-ssi@keolis.com** pour en obtenir une nouvelle
   
 > 💡 Si votre clé devient invalide après l'installation, Home Assistant affiche automatiquement une notification « Ré-authentification requise » : cliquez dessus pour saisir la nouvelle clé, sans rien reconfigurer d'autre.
+
 ---
 
 ### Aucun bus n'apparaît en mode "Positions des bus"
@@ -442,7 +443,7 @@ Options disponibles selon le mode :
 **Solutions :**
 1. Les fichiers JS sont enregistrés automatiquement au démarrage — **redémarrez Home Assistant**
 2. Rechargez la page — les URLs sont versionnées, un rechargement suffit après une mise à jour
-3. Vérifiez que les entrées Ressources sont listées avec un suffixe ?v=<version>
+3. Vérifiez que les entrées Ressources sont listées avec un suffixe '?v=<version>'
 
 ---
 
