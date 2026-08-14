@@ -44,10 +44,10 @@ Avant de commencer, assurez-vous d'avoir :
 | Élément | Détail |
 |---|---|
 | **Home Assistant** | Version 2024.1.0 ou plus récente |
-| **Clé API Ginko** | À obtenir sur le portail api Ginko |
+| **Clé API Ginko** | À demander par e-mail à Keolis Besançon Mobilités |
 | **Accès aux fichiers HA** | Via SSH, Samba ou l'add-on File Editor |
 
-> 💡 **Obtenir une clé API :** Rendez-vous sur le portail api Ginko (https://api.ginko.voyage/#prez) et demander une clé pour votre application.
+> 💡 **Obtenir une clé API :** Rendez-vous sur le portail api Ginko (https://api.ginko.voyage/#prez) et écrivez à ginko.support-ssi@keolis.com en décrivant votre usage (personnel / domotique).
 
 ---
 
@@ -182,7 +182,7 @@ Ce mode crée également les **capteurs globaux** (voir section suivante).
 | Champ | Description |
 |---|---|
 | Ligne | Liste déroulante |
-| Intervalle de rafraîchissement | De 10 à 60 secondes (défaut : 15 s) |
+| Intervalle de rafraîchissement | Automatique (tram : 10 s, bus : 30 s) ou manuel de 10 à 300 s |
 
 **Capteur créé :**
 - `sensor.ginko_bus_ligne_<N>`
@@ -210,7 +210,7 @@ Ces deux capteurs sont créés **automatiquement** lors de la première configur
 
 L'intégration inclut trois cartes personnalisées pour visualiser les données dans votre tableau de bord. Elles sont automatiquement enregistrées au démarrage de Home Assistant.
 
-> 💡 Si une carte n'apparaît pas, essayez de vider le cache du navigateur avec `Ctrl+Maj+R`, puis vérifiez dans **Paramètres → Tableaux de bord → Ressources** que les entrées Ginko sont bien présentes.
+> 💡 Les ressources JS sont versionnées automatiquement (?v=<version>) : après une mise à jour de l'intégration, un simple rechargement de la page suffit.
 
 ---
 
@@ -219,11 +219,12 @@ L'intégration inclut trois cartes personnalisées pour visualiser les données 
 **Pour :** les modes Arrêt par nom, Lignes spécifiques, Arrêts proches.
 
 Affiche la liste des prochains passages avec :
-- Badge coloré de la ligne
-- Pastille de temps (vert = imminent, orange = bientôt)
-- Label "Théorique" pour les horaires sans GPS
-- Icône d'accessibilité
-- Point indicateur de perturbation
+- Badge coloré (couleurs officielles, liseré adaptatif clair/sombre)
+- Wifi = temps réel · ~ = théorique (infobulles)
+- Icône PMR (véhicule accessible)
+- Point de position : vert = à quai, bleu = en circulation
+- Bandeau perturbations (un message par ligne + badge des lignes)
+- Textes de remplacement en ambre (« Déviation », « Travaux »…)
 
 **Configuration YAML :**
 
@@ -247,7 +248,7 @@ messages_entity: sensor.ginko_messages  # optionnel
 Affiche :
 - Bannière verte "Tout est normal" si aucune perturbation
 - Messages avec corps de texte dépliable
-- Filtres : Toutes / ⚠ Perturbées / par ligne
+- Filtres : Toutes / ⚠ Perturbées / Prévues / par ligne, avec point de sévérité coloré (🟠 en cours, 🔴 interrompue, ⚪ prévue)
 - Lignes triées par sévérité (les plus perturbées en premier)
 
 **Configuration YAML :**
@@ -309,6 +310,8 @@ entity: sensor.ginko_bus_ligne_7
 | `couleurFond` | string | Couleur de fond de la ligne (hex) |
 | `couleurTexte` | string | Couleur du texte de la ligne (hex) |
 | `modeTransport` | string | Type de transport (bus, tram…) |
+| `typeDeTemp`s | int | 0 = temps relatif, 1 = heure absolue, 2 = texte de remplacement |
+| `déviation | bool | true si le passage est remplacé par un texte (« Déviation », « Travaux »…) |
 
 ### Mode Personne (`sensor.ginko_proximite_<person_name>`)
 
@@ -415,7 +418,8 @@ Options disponibles selon le mode :
 - Vérifiez votre clé sur le portail développeur Ginko
 - Assurez-vous qu'il n'y a pas d'espace au début ou à la fin de la clé
 - Essayez de regénérer une nouvelle clé sur le portail
-
+  
+> 💡 Si votre clé devient invalide après l'installation, Home Assistant affiche automatiquement une notification « Ré-authentification requise » : cliquez dessus pour saisir la nouvelle clé, sans rien reconfigurer d'autre.
 ---
 
 ### Aucun bus n'apparaît en mode "Positions des bus"
@@ -437,8 +441,8 @@ Options disponibles selon le mode :
 
 **Solutions :**
 1. Les fichiers JS sont enregistrés automatiquement au démarrage — **redémarrez Home Assistant**
-2. Videz le cache du navigateur avec `Ctrl+Maj+R` (ou `Cmd+Maj+R` sur Mac)
-3. Vérifiez dans **Paramètres → Tableaux de bord → Ressources** que les deux entrées Ginko sont bien listées
+2. Rechargez la page — les URLs sont versionnées, un rechargement suffit après une mise à jour
+3. Vérifiez que les entrées Ressources sont listées avec un suffixe ?v=<version>
 
 ---
 
