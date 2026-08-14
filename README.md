@@ -47,7 +47,7 @@ Avant de commencer, assurez-vous d'avoir :
 | **Clé API Ginko** | À obtenir sur le portail api Ginko |
 | **Accès aux fichiers HA** | Via SSH, Samba ou l'add-on File Editor |
 
-> 💡 **Obtenir une clé API :** Rendez-vous sur le portail api Ginko (https://api.ginko.voyage/#prez)et demander une clé pour votre application.
+> 💡 **Obtenir une clé API :** Rendez-vous sur le portail api Ginko (https://api.ginko.voyage/#prez) et demander une clé pour votre application.
 
 ---
 
