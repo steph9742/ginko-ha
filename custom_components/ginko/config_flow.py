@@ -136,6 +136,13 @@ class GinkoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 self._api_key = api_key
                 return await self.async_step_mode()
+                
+        if user_input is None:
+            for entry in self._async_current_entries():
+                existing_key = entry.data.get(CONF_API_KEY)
+                if existing_key and await _validate_api_key(existing_key) is None:
+                    self._api_key = existing_key
+                    return await self.async_step_mode()
 
         return self.async_show_form(
             step_id="user",
