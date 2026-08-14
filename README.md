@@ -4,7 +4,7 @@
 
 ---
 
-## 📋 Sommaire
+## Sommaire
 
 1. [Description](#-description)
 2. [Prérequis](#-prérequis)
@@ -24,7 +24,7 @@
 
 ---
 
-## 🗺️ Description
+## Description
 
 Cette intégration connecte Home Assistant à l'API REST du réseau de transports en commun **Ginko** de Besançon. Elle vous permet de surveiller :
 
