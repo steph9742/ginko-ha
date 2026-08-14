@@ -19,7 +19,8 @@
 6. [Cartes Lovelace](#cartes-lovelace)
 7. [Référence des attributs des capteurs](#référence-des-attributs-des-capteurs)
 8. [Options après installation](#options-après-installation)
-9. [Dépannage](#dépannage)
+9. [Exemples d'automatisations](#exemples-dautomatisations)
+10. [Dépannage](#dépannage)
 
 ---
 
@@ -97,7 +98,7 @@ L'intégration propose cinq modes distincts. Vous pouvez créer plusieurs entré
 |---|---|
 | Nom de l'arrêt | Liste déroulante avec autocomplétion |
 | Nombre de passages | De 1 à 5 (défaut : 3) |
-| Intervalle de rafraîchissement | Automatique (tram : 10 s, bus : 30 s) ou manuel de 10 à 300 s |
+| Intervalle de rafraîchissement | Automatique (tram : 10 s, bus : 30 s) ou manuel de 10 à 300 |
 
 **Capteur créé :**
 - `sensor.ginko_<nom_arret>`
@@ -121,7 +122,7 @@ Pour chaque entrée, vous choisissez successivement :
 **Capteurs créés :**
 - Un capteur par combinaison : `sensor.ginko_<nom>_<id_ligne>_aller` ou `_retour`
 - **État :** secondes avant le prochain bus (entier)
-- **Attributs :** voir [référence des attributs](#référence-des-attributs-des-capteurs)
+- **Attributs :** voir [référence des attributs](#mode-liste)
 
 > 💡 Ce mode est idéal pour déclencher des automatisations précises, par exemple "notifie-moi 5 minutes avant mon bus du matin".
 
@@ -138,7 +139,7 @@ Pour chaque entrée, vous choisissez successivement :
 | Entité personne | Sélecteur d'entité `person.*` |
 | Nombre de passages | De 1 à 5 par arrêt |
 | Nombre d'arrêts max | De 1 à 10 (défaut : 5) |
-| Intervalle de rafraîchissement | Automatique (tram : 10 s, bus : 30 s) ou manuel de 10 à 300 s |
+| Intervalle de rafraîchissement | Automatique (tram : 10 s, bus : 30 s) ou manuel de 10 à 300 |
 
 **Capteur créé :**
 - `sensor.ginko_proximite_<person_name>`
@@ -209,7 +210,7 @@ Ces deux capteurs sont créés **automatiquement** lors de la première configur
 
 L'intégration inclut trois cartes personnalisées pour visualiser les données dans votre tableau de bord. Elles sont automatiquement enregistrées au démarrage de Home Assistant.
 
-> 💡 Les ressources JS sont versionnées automatiquement (`?v=<version>`) : après une mise à jour de l'intégration, un simple rechargement de la page suffit.
+> 💡 Les ressources JS sont versionnées automatiquement ('?v=<version>') : après une mise à jour de l'intégration, un simple rechargement de la page suffit.
 
 ---
 
@@ -297,7 +298,7 @@ entity: sensor.ginko_bus_ligne_7
 | `nom_arret` | string | Nom de l'arrêt |
 | `passages` | liste | Liste des objets de passage (voir ci-dessous) |
 
-### Mode Liste (`sensor.ginko_<nom>_<id_ligne>_aller/retour`)
+### Mode Liste (`sensor.ginko_<nom>_<id_ligne>_aller/retour`) {#mode-liste}
 
 | Attribut | Type | Description |
 |---|---|---|
@@ -310,7 +311,7 @@ entity: sensor.ginko_bus_ligne_7
 | `couleurTexte` | string | Couleur du texte de la ligne (hex) |
 | `modeTransport` | string | Type de transport (bus, tram…) |
 | `typeDeTemps` | int | 0 = temps relatif, 1 = heure absolue, 2 = texte de remplacement |
-| `deviation` | bool | true si le passage est remplacé par un texte (« Déviation », « Travaux »…) |
+| `déviation` | bool | true si le passage est remplacé par un texte (« Déviation », « Travaux »…) |
 
 ### Mode Personne (`sensor.ginko_proximite_<person_name>`)
 
@@ -414,9 +415,10 @@ Options disponibles selon le mode :
 **Symptôme :** L'intégration refuse de s'ajouter ou affiche une erreur d'authentification.
 
 **Solutions :**
+- Vérifiez votre clé sur le portail api Ginko
 - Assurez-vous qu'il n'y a pas d'espace au début ou à la fin de la clé
 - Si la clé ne fonctionne plus, contactez **ginko.support-ssi@keolis.com** pour en obtenir une nouvelle
-
+  
 > 💡 Si votre clé devient invalide après l'installation, Home Assistant affiche automatiquement une notification « Ré-authentification requise » : cliquez dessus pour saisir la nouvelle clé, sans rien reconfigurer d'autre.
 
 ---
@@ -441,7 +443,7 @@ Options disponibles selon le mode :
 **Solutions :**
 1. Les fichiers JS sont enregistrés automatiquement au démarrage — **redémarrez Home Assistant**
 2. Rechargez la page — les URLs sont versionnées, un rechargement suffit après une mise à jour
-3. Vérifiez que les entrées Ressources sont listées avec un suffixe `?v=<version>`
+3. Vérifiez que les entrées Ressources sont listées avec un suffixe '?v=<version>'
 
 ---
 
