@@ -349,7 +349,8 @@ class GinkoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         ligne = self._lignes_info.get(lid, {})
         num   = ligne.get("numLignePublic", lid)
         nom   = ligne.get("libellePublic", "")
-        title = self._name or f"Ginko Bus L{num}"
+        vehicule = "Tram" if str(num).upper().startswith("T") else "Bus"
+        title = self._name or f"Ginko {vehicule} {num}"
         return self.async_create_entry(
             title=title,
             data={
