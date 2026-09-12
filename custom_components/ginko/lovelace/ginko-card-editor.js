@@ -500,3 +500,128 @@ class GinkoSuiviCardEditor extends HTMLElement {
 }
 
 customElements.define("ginko-suivi-card-editor", GinkoSuiviCardEditor);
+
+// ── GinkoRechercheCardEditor ──────────────────────────────────────────────────
+
+class GinkoRechercheCardEditor extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this._config = {};
+    this._hass   = null;
+  }
+
+  setConfig(config) { this._config = { ...config }; this._render(); }
+
+  set hass(h) {
+    if (!this._hass) {
+      this._hass = h;
+      this._autoFill();
+      this._render();
+    } else {
+      this._hass = h;
+    }
+  }
+
+  _autoFill() {
+    if (!this._hass) return;
+    if (!this._config.messages_entity && this._hass.states["sensor.ginko_messages"]) {
+      const upd = { ...this._config, messages_entity: "sensor.ginko_messages" };
+      this._config = upd;
+      this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: upd }, bubbles: true, composed: true }));
+    }
+  }
+
+  _render() {
+    const cfg = this._config;
+    const sel = (v, cur) => v === cur ? "selected" : "";
+    const traffic = cfg.show_traffic ?? "if_disrupted";
+    this.shadowRoot.innerHTML = `<style>${EDITOR_STYLES}</style>
+    <div class="gk-editor">
+
+      <div class="gk-field">
+        <label>Arrêt prédéfini <span style="font-weight:400;text-transform:none">(optionnel)</span></label>
+        <input id="arret" type="text" value="${this._esc(cfg.arret ?? "")}" placeholder="ex. Gare Viotte">
+        <div class="gk-hint">Laissez vide pour laisser l'utilisateur chercher l'arrêt de son choix.</div>
+      </div>
+
+      <div class="gk-field">
+        <label>Passages par ligne et direction</label>
+        <input id="nb_passages" type="number" min="1" max="5" value="${Number(cfg.nb_passages ?? 3)}">
+      </div>
+
+      <div class="gk-field">
+        <label>Rafraîchissement (secondes)</label>
+        <input id="refresh" type="number" min="10" max="300" step="5" value="${Number(cfg.refresh ?? 30)}">
+        <div class="gk-hint">Les horaires ne sont interrogés que lorsqu'un arrêt est affiché.</div>
+      </div>
+
+      <div class="gk-field">
+        <label>Bandeau infotrafic</label>
+        <select id="show_traffic">
+          <option value="if_disrupted" ${sel("if_disrupted", traffic)}>Si perturbation</option>
+          <option value="always" ${sel("always", traffic)}>Toujours</option>
+          <option value="never" ${sel("never", traffic)}>Jamais</option>
+        </select>
+      </div>
+
+      <div class="gk-field">
+        <label>Entité messages infotrafic <span style="font-weight:400;text-transform:none">(optionnel)</span></label>
+        <input id="messages_entity" type="text" value="${this._esc(cfg.messages_entity ?? "")}" placeholder="sensor.ginko_messages">
+      </div>
+
+      <div class="gk-field">
+        <label class="gk-check-label"><input id="remember" type="checkbox" ${(cfg.remember ?? true) ? "checked" : ""}> Mémoriser le dernier arrêt consulté (navigateur)</label>
+      </div>
+
+      <div class="gk-section">Aperçu YAML</div>
+      <pre>${this._yaml()}</pre>
+    </div>`;
+
+    const emit = (cfg) => {
+      this._config = cfg;
+      this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: cfg }, bubbles: true, composed: true }));
+      const pre = this.shadowRoot.querySelector("pre");
+      if (pre) pre.textContent = this._yaml();
+    };
+    const bindText = (id, key, numeric = false) => {
+      const el = this.shadowRoot.querySelector(`#${id}`);
+      if (!el) return;
+      el.addEventListener("change", e => {
+        const cfg = { ...this._config };
+        const v = e.target.value;
+        if (v === "" || v == null) delete cfg[key];
+        else cfg[key] = numeric ? Number(v) : v;
+        emit(cfg);
+      });
+    };
+    bindText("arret",           "arret");
+    bindText("nb_passages",     "nb_passages", true);
+    bindText("refresh",         "refresh", true);
+    bindText("show_traffic",    "show_traffic");
+    bindText("messages_entity", "messages_entity");
+    const rem = this.shadowRoot.querySelector("#remember");
+    if (rem) rem.addEventListener("change", e => {
+      const cfg = { ...this._config };
+      if (e.target.checked) delete cfg.remember; else cfg.remember = false;
+      emit(cfg);
+    });
+  }
+
+  _yaml() {
+    const c = this._config;
+    return [
+      `type: custom:ginko-recherche-card`,
+      c.arret ? `arret: ${c.arret}` : null,
+      c.nb_passages != null ? `nb_passages: ${c.nb_passages}` : null,
+      c.refresh != null ? `refresh: ${c.refresh}` : null,
+      c.show_traffic ? `show_traffic: ${c.show_traffic}` : null,
+      c.messages_entity ? `messages_entity: ${c.messages_entity}` : null,
+      c.remember === false ? `remember: false` : null,
+    ].filter(Boolean).join("\n");
+  }
+
+  _esc(s) { return String(s).replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+}
+
+customElements.define("ginko-recherche-card-editor", GinkoRechercheCardEditor);

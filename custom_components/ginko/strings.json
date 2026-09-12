@@ -108,5 +108,35 @@
         }
       }
     }
+  },
+  "services": {
+    "chercher_arret": {
+      "name": "Chercher un arrêt",
+      "description": "Recherche des arrêts Ginko par nom (accents et casse ignorés). Renvoie la liste des arrêts correspondants.",
+      "fields": {
+        "recherche": {
+          "name": "Recherche",
+          "description": "Texte à chercher dans le nom des arrêts (ex. « viotte »)."
+        },
+        "limite": {
+          "name": "Limite",
+          "description": "Nombre maximum de résultats (1 à 50)."
+        }
+      }
+    },
+    "get_horaires": {
+      "name": "Horaires d'un arrêt",
+      "description": "Renvoie les prochains passages à un arrêt, qu'il soit suivi par un capteur ou non.",
+      "fields": {
+        "nom": {
+          "name": "Arrêt",
+          "description": "Nom de l'arrêt (correspondance approximative acceptée)."
+        },
+        "nb": {
+          "name": "Passages",
+          "description": "Nombre de passages par ligne et direction (1 à 5)."
+        }
+      }
+    }
   }
 }

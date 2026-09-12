@@ -24,6 +24,7 @@ from .coordinator import (
     GinkoPersonProximityCoordinator,
     GinkoSuiviLigneCoordinator,
 )
+from .services import async_register_services
 
 _LOGGER = logging.getLogger(__name__)
 PLATFORMS = ["sensor"]
@@ -58,6 +59,7 @@ async def _register_lovelace_resources(hass: HomeAssistant, version: str) -> Non
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Sert les fichiers JS et enregistre la carte dans Lovelace."""
+    async_register_services(hass)
     # Les fichiers JS de la carte sont dans ginko/lovelace/.
     # (L'URL publique reste /ginko_card pour ne pas casser les dashboards existants.)
     card_dir = hass.config.path("custom_components", "ginko", "lovelace")

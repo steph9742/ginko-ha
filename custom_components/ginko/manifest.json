@@ -1,8 +1,10 @@
 {
   "domain": "ginko",
   "name": "Ginko Besançon",
-  "version": "1.1.3",
-  "codeowners": ["@steph9742"],
+  "version": "1.2.0",
+  "codeowners": [
+    "@steph9742"
+  ],
   "config_flow": true,
   "dependencies": [],
   "documentation": "https://github.com/steph9742/ginko-ha",

@@ -1,7 +1,7 @@
 // custom_components/ginko/lovelace/ginko-card.js
 // Ginko Besançon — Lovelace custom card
 
-const VERSION = "0.2.7";
+const VERSION = "1.2.0";
 
 // ── SVG icons ────────────────────────────────────────────────────────────────
 
@@ -288,24 +288,26 @@ class GinkoCard extends HTMLElement {
     const rawTitle = attrs.nom_arret ?? attrs.friendly_name ?? entity.entity_id;
     const title    = _capitalize(rawTitle);
 
-    // Filtrer les alertes sur les lignes qui desservent cet arrêt
+    return `<div class="gk-card">
+      ${this._header(title, entity.last_updated)}
+      ${this._passagesInner(all)}
+    </div>`;
+  }
+
+  _passagesInner(all) {
     const lineNums  = [...new Set(all.map(p => String(p.numLignePublic ?? p.idLigne ?? "")))].filter(Boolean);
     const alerts    = this._alerts(lineNums);
     const disrupted = alerts.length > 0;
+    const banner    = this._shouldShowTraffic(disrupted) && disrupted ? this._alertBanner(alerts) : "";
 
     if (all.length === 0) {
-      return `<div class="gk-card">
-        ${this._header(title, entity.last_updated)}
-        ${this._shouldShowTraffic(disrupted) && disrupted ? this._alertBanner(alerts) : ""}
-        <div class="gk-empty">Aucun passage disponible.</div>
-      </div>`;
+      return `${banner}<div class="gk-empty">Aucun passage disponible.</div>`;
     }
 
     const nextP = all.reduce((a, b) =>
       (a.tempsEnSeconde ?? 999999) <= (b.tempsEnSeconde ?? 999999) ? a : b
     );
 
-    // Grouper par ligne
     const byLigne = new Map();
     for (const p of all) {
       const k = p.idLigne ?? p.numLignePublic ?? "?";
@@ -315,12 +317,7 @@ class GinkoCard extends HTMLElement {
 
     const posMap     = this._posMap();
     const ligneCards = [...byLigne.values()].map(lp => this._renderLigneCard(lp, nextP, posMap)).join("");
-
-    return `<div class="gk-card">
-      ${this._header(title, entity.last_updated)}
-      ${this._shouldShowTraffic(disrupted) && disrupted ? this._alertBanner(alerts) : ""}
-      <div class="gk-lines">${ligneCards}</div>
-    </div>`;
+    return `${banner}<div class="gk-lines">${ligneCards}</div>`;
   }
 
   _renderNextBanner(p, posMap = new Map()) {
@@ -622,6 +619,254 @@ class GinkoCard extends HTMLElement {
     return m === "always" || (m === "if_disrupted" && disrupted);
   }
 
+}
+
+// ── Recherche card ────────────────────────────────────────────────────────────
+
+const ICON_SEARCH = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg>`;
+const ICON_CLEAR  = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>`;
+
+const RECHERCHE_STYLES = `
+  .gk-search-hd { padding:8px 10px; display:flex; align-items:center; gap:8px; border-bottom:0.5px solid var(--gk-border); }
+  .gk-search-hd > svg { width:18px; height:18px; color:var(--gk-txt-3); flex-shrink:0; }
+  .gk-search-in { flex:1; min-width:0; border:none; outline:none; background:transparent; color:var(--gk-txt); font:inherit; font-size:14px; padding:4px 0; }
+  .gk-search-in::placeholder { color:var(--gk-txt-3); }
+  .gk-search-clear { display:none; width:22px; height:22px; border:none; background:var(--gk-row-bg); border-radius:50%; color:var(--gk-txt-2); cursor:pointer; padding:4px; flex-shrink:0; }
+  .gk-search-clear svg { width:100%; height:100%; display:block; }
+  .gk-search-clear.on { display:block; }
+  .gk-sugg { display:none; max-height:220px; overflow-y:auto; border-bottom:0.5px solid var(--gk-border); }
+  .gk-sugg.on { display:block; }
+  .gk-sugg-row { display:flex; align-items:center; gap:8px; padding:8px 12px; font-size:13px; color:var(--gk-txt); cursor:pointer; border-bottom:0.5px solid var(--gk-border); }
+  .gk-sugg-row:last-child { border-bottom:none; }
+  .gk-sugg-row:hover, .gk-sugg-row.hl { background:var(--gk-row-bg); }
+  .gk-sugg-row svg { width:14px; height:14px; color:var(--gk-txt-3); flex-shrink:0; }
+  .gk-sugg-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .gk-sugg-meta { font-size:10px; color:var(--gk-txt-3); white-space:nowrap; }
+  .gk-rs-title { padding:8px 12px 2px; display:flex; align-items:baseline; gap:8px; }
+  .gk-rs-name { font-size:13px; font-weight:600; color:var(--gk-txt); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .gk-rs-err { padding:12px 14px; font-size:12px; color:#dc2626; }
+`;
+
+class GinkoRechercheCard extends GinkoCard {
+  static getConfigElement() { return document.createElement("ginko-recherche-card-editor"); }
+  static getStubConfig() {
+    return { nb_passages: 3, refresh: 30, show_traffic: "if_disrupted" };
+  }
+
+  constructor() {
+    super();
+    this._arret = "";
+    this._data = null;
+    this._loadedAt = null;
+    this._error = "";
+    this._loading = false;
+    this._sugg = [];
+    this._hl = -1;
+    this._debounce = null;
+    this._shellBuilt = false;
+    this._restored = false;
+  }
+
+  setConfig(config) {
+    this._config = {
+      messages_entity: config.messages_entity ?? "",
+      suivi_entities:  Array.isArray(config.suivi_entities) ? config.suivi_entities : [],
+      nb_passages:     Math.min(5, Math.max(1, Number(config.nb_passages ?? 3))),
+      refresh:         Math.min(300, Math.max(10, Number(config.refresh ?? 30))),
+      show_traffic:    config.show_traffic ?? "if_disrupted",
+      arret:           config.arret ?? "",
+      placeholder:     config.placeholder ?? "Rechercher un arrêt…",
+      remember:        config.remember ?? true,
+      lignes_filtre:   [],
+      max_passages:    5,
+    };
+    this._shellBuilt = false;
+    this._restartTimer();
+    if (this._hass) this._render();
+  }
+
+  connectedCallback()    { this._restartTimer(); }
+  disconnectedCallback() { clearInterval(this._refreshTimer); this._refreshTimer = null; }
+  getCardSize()          { return 4; }
+
+  _restartTimer() {
+    clearInterval(this._refreshTimer);
+    const ms = (this._config?.refresh ?? 30) * 1000;
+    this._refreshTimer = setInterval(() => {
+      if (this._arret) this._loadHoraires();
+      else this._renderResults();
+    }, ms);
+  }
+
+  _storageKey() { return "ginko-recherche-last"; }
+
+  _render() {
+    if (!this._config || !this._hass) return;
+    if (!this._shellBuilt) this._buildShell();
+    if (!this._restored) {
+      this._restored = true;
+      let initial = this._config.arret;
+      if (!initial && this._config.remember) {
+        try { initial = localStorage.getItem(this._storageKey()) || ""; } catch (e) { initial = ""; }
+      }
+      if (initial) this._select(initial, false);
+    }
+    this._renderResults();
+  }
+
+  _buildShell() {
+    const isDark = this._hass?.themes?.darkMode ?? false;
+    const darkBg = isDark ? `<style>.gk-card{background:#0f1729!important}</style>` : "";
+    this.shadowRoot.innerHTML = `<style>${STYLES}${RECHERCHE_STYLES}</style>${darkBg}
+    <div class="gk-card">
+      <div class="gk-search-hd">
+        ${ICON_SEARCH}
+        <input class="gk-search-in" type="text" autocomplete="off" spellcheck="false"
+               placeholder="${_esc(this._config.placeholder)}" value="${_esc(this._arret)}">
+        <button class="gk-search-clear${this._arret ? " on" : ""}" title="Effacer">${ICON_CLEAR}</button>
+      </div>
+      <div class="gk-sugg"></div>
+      <div class="gk-results"></div>
+    </div>`;
+    this._shellBuilt = true;
+
+    const input = this.shadowRoot.querySelector(".gk-search-in");
+    const clear = this.shadowRoot.querySelector(".gk-search-clear");
+    const sugg  = this.shadowRoot.querySelector(".gk-sugg");
+
+    input.addEventListener("input", () => {
+      clear.classList.toggle("on", input.value.length > 0);
+      clearTimeout(this._debounce);
+      const q = input.value.trim();
+      if (q.length < 2) { this._sugg = []; this._renderSugg(); return; }
+      this._debounce = setTimeout(() => this._search(q), 300);
+    });
+    input.addEventListener("keydown", e => {
+      if (e.key === "ArrowDown") { e.preventDefault(); this._hl = Math.min(this._sugg.length - 1, this._hl + 1); this._renderSugg(); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); this._hl = Math.max(-1, this._hl - 1); this._renderSugg(); }
+      else if (e.key === "Enter") {
+        e.preventDefault();
+        const pick = this._sugg[this._hl >= 0 ? this._hl : 0];
+        if (pick) this._select(pick.nom);
+        else if (input.value.trim()) this._select(input.value.trim());
+      }
+      else if (e.key === "Escape") { this._sugg = []; this._renderSugg(); }
+    });
+    input.addEventListener("focus", () => { if (this._sugg.length) sugg.classList.add("on"); });
+    clear.addEventListener("click", () => {
+      input.value = ""; clear.classList.remove("on");
+      this._sugg = []; this._renderSugg();
+      this._arret = ""; this._data = null; this._error = ""; this._loadedAt = null;
+      try { if (this._config.remember) localStorage.removeItem(this._storageKey()); } catch (e) {}
+      this._renderResults();
+      input.focus();
+    });
+    sugg.addEventListener("click", e => {
+      const row = e.target.closest(".gk-sugg-row");
+      if (row?.dataset.nom) this._select(row.dataset.nom);
+    });
+  }
+
+  async _callService(service, data) {
+    const res = await this._hass.callWS({
+      type: "call_service", domain: "ginko", service,
+      service_data: data, return_response: true,
+    });
+    return res?.response ?? res;
+  }
+
+  async _search(q) {
+    try {
+      const resp = await this._callService("chercher_arret", { recherche: q, limite: 8 });
+      const input = this.shadowRoot.querySelector(".gk-search-in");
+      if (input && input.value.trim() !== q) return;
+      this._sugg = Array.isArray(resp?.arrets) ? resp.arrets : [];
+      this._hl = -1;
+      this._renderSugg();
+    } catch (err) {
+      this._sugg = [];
+      this._renderSugg();
+      this._error = `Recherche impossible : ${err?.message ?? err}`;
+      this._renderResults();
+    }
+  }
+
+  _renderSugg() {
+    const sugg = this.shadowRoot.querySelector(".gk-sugg");
+    if (!sugg) return;
+    if (!this._sugg.length) { sugg.classList.remove("on"); sugg.innerHTML = ""; return; }
+    sugg.innerHTML = this._sugg.map((a, i) => {
+      const meta = [
+        a.quais > 1 ? `${a.quais} quais` : "",
+        a.accessible ? "PMR" : "",
+      ].filter(Boolean).join(" · ");
+      return `<div class="gk-sugg-row${i === this._hl ? " hl" : ""}" data-nom="${_esc(a.nom)}">
+        ${ICON_BUS}<span class="gk-sugg-name">${_esc(a.nom)}</span>
+        ${meta ? `<span class="gk-sugg-meta">${_esc(meta)}</span>` : ""}
+      </div>`;
+    }).join("");
+    sugg.classList.add("on");
+  }
+
+  _select(nom, persist = true) {
+    this._arret = nom;
+    this._sugg = []; this._hl = -1;
+    this._renderSugg();
+    const input = this.shadowRoot.querySelector(".gk-search-in");
+    const clear = this.shadowRoot.querySelector(".gk-search-clear");
+    if (input) { input.value = nom; input.blur(); }
+    if (clear) clear.classList.add("on");
+    if (persist && this._config.remember) {
+      try { localStorage.setItem(this._storageKey(), nom); } catch (e) {}
+    }
+    this._data = null; this._error = ""; this._loadedAt = null;
+    this._renderResults();
+    this._loadHoraires();
+  }
+
+  async _loadHoraires() {
+    if (!this._arret || this._loading || !this._hass) return;
+    this._loading = true;
+    const wanted = this._arret;
+    try {
+      const resp = await this._callService("get_horaires", { nom: wanted, nb: this._config.nb_passages });
+      if (this._arret !== wanted) return;
+      this._data = resp;
+      this._error = "";
+      this._loadedAt = new Date().toISOString();
+    } catch (err) {
+      if (this._arret !== wanted) return;
+      this._error = `Horaires indisponibles : ${err?.message ?? err}`;
+    } finally {
+      this._loading = false;
+      this._renderResults();
+    }
+  }
+
+  _renderResults() {
+    const box = this.shadowRoot.querySelector(".gk-results");
+    if (!box) return;
+    if (!this._arret) {
+      box.innerHTML = `<div class="gk-empty">Tapez le nom d'un arrêt pour afficher ses prochains passages.</div>`;
+      return;
+    }
+    if (this._error && !this._data) {
+      box.innerHTML = `<div class="gk-rs-err">${_esc(this._error)}</div>`;
+      return;
+    }
+    if (!this._data) {
+      box.innerHTML = `<div class="gk-empty">Chargement des horaires…</div>`;
+      return;
+    }
+    const all = Array.isArray(this._data.passages) ? this._data.passages : [];
+    const nom = _capitalize(this._data.nom ?? this._arret);
+    box.innerHTML = `
+      <div class="gk-rs-title">
+        <span class="gk-rs-name">${_esc(nom)}</span>
+        <span class="gk-header-upd">màj ${_timeSince(this._loadedAt)}</span>
+      </div>
+      ${this._passagesInner(all)}`;
+  }
 }
 
 // ── Etat card ─────────────────────────────────────────────────────────────────
@@ -1039,8 +1284,15 @@ class GinkoSuiviCard extends HTMLElement {
 customElements.define("ginko-card", GinkoCard);
 customElements.define("ginko-etat-card", GinkoEtatCard);
 customElements.define("ginko-suivi-card", GinkoSuiviCard);
+customElements.define("ginko-recherche-card", GinkoRechercheCard);
 
 window.customCards = window.customCards ?? [];
+window.customCards.push({
+  type:        "ginko-recherche-card",
+  name:        "Ginko Recherche d'arrêt",
+  description: "Recherche dynamique d'un arrêt Ginko et affichage de ses prochains passages, sans capteur.",
+  preview:     false,
+});
 window.customCards.push({
   type:        "ginko-card",
   name:        "Ginko Besançon",

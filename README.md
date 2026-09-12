@@ -17,9 +17,9 @@
    - [Mode 5 — Positions des bus](#mode-5--positions-des-bus-mode_suivi_ligne)
 5. [Capteurs globaux](#capteurs-globaux)
 6. [Cartes Lovelace](#cartes-lovelace)
-7. [Référence des attributs des capteurs](#référence-des-attributs-des-capteurs)
-8. [Options après installation](#options-après-installation)
-9. [Exemples d'automatisations](#exemples-dautomatisations)
+7. [Services](#services)
+8. [Référence des attributs des capteurs](#référence-des-attributs-des-capteurs)
+9. [Options après installation](#options-après-installation)
 10. [Dépannage](#dépannage)
 
 ---
@@ -129,7 +129,7 @@ Pour chaque entrée, vous choisissez successivement :
 **Capteurs créés :**
 - Un capteur par combinaison : `sensor.ginko_<nom>_<id_ligne>_aller` ou `_retour`
 - **État :** secondes avant le prochain bus (entier)
-- **Attributs :** voir [référence des attributs](#mode-liste)
+- **Attributs :** voir [référence des attributs](#référence-des-attributs-des-capteurs)
 
 > 💡 Ce mode est idéal pour déclencher des automatisations précises, par exemple "notifie-moi 5 minutes avant mon bus du matin".
 
@@ -215,9 +215,9 @@ Ces deux capteurs sont créés **automatiquement** lors de la première configur
 
 ## Cartes Lovelace
 
-L'intégration inclut trois cartes personnalisées pour visualiser les données dans votre tableau de bord. Elles sont automatiquement enregistrées au démarrage de Home Assistant.
+L'intégration inclut quatre cartes personnalisées pour visualiser les données dans votre tableau de bord. Elles sont automatiquement enregistrées au démarrage de Home Assistant.
 
-> 💡 Les ressources JS sont versionnées automatiquement ('?v=<version>') : après une mise à jour de l'intégration, un simple rechargement de la page suffit.
+> 💡 Les ressources JS sont versionnées automatiquement (`?v=<version>`) : après une mise à jour de l'intégration, un simple rechargement de la page suffit.
 
 ---
 
@@ -296,6 +296,92 @@ entity: sensor.ginko_bus_ligne_7
 
 ---
 
+### Carte 4 — `ginko-recherche-card`
+
+**Pour :** consulter les horaires de **n'importe quel arrêt** du réseau, suivi ou non, comme dans une application de transports.
+
+Affiche :
+- Un champ de recherche avec autocomplétion (accents et casse ignorés, navigation clavier ↑ ↓ Entrée)
+- Les prochains passages de l'arrêt choisi, avec le même rendu que `ginko-card` (badges, pilules, PMR, bandeau infotrafic)
+- Rafraîchissement automatique tant qu'un arrêt est affiché ; le dernier arrêt consulté est mémorisé dans le navigateur
+
+Cette carte **ne crée aucun capteur** et n'interroge l'API Ginko que lorsqu'un arrêt est affiché, via les [services de l'intégration](#services).
+
+**Configuration YAML :**
+
+```yaml
+type: custom:ginko-recherche-card
+messages_entity: sensor.ginko_messages  # optionnel
+nb_passages: 3
+refresh: 30
+```
+
+| Option | Obligatoire | Description |
+|---|---|---|
+| `arret` | Non | Arrêt prédéfini (la recherche reste possible) |
+| `nb_passages` | Non | Passages par ligne et direction, 1 à 5 (défaut : 3) |
+| `refresh` | Non | Intervalle de rafraîchissement en secondes, 10 à 300 (défaut : 30) |
+| `show_traffic` | Non | `if_disrupted` (défaut), `always` ou `never` |
+| `messages_entity` | Non | Capteur global des messages pour le bandeau infotrafic |
+| `remember` | Non | `false` pour ne pas mémoriser le dernier arrêt (défaut : `true`) |
+
+---
+
+## Services
+
+L'intégration expose deux services **avec réponse**, utilisables depuis les automatisations, les scripts, les templates, la carte de recherche ou une autre intégration. Ils réutilisent la clé API déjà configurée et n'interrogent Ginko qu'à la demande (cache court de 20 s sur les horaires).
+
+### `ginko.chercher_arret`
+
+Recherche des arrêts par nom (accents et casse ignorés ; les noms commençant par la recherche sont classés en premier).
+
+| Champ | Obligatoire | Description |
+|---|---|---|
+| `recherche` | ✅ Oui | Texte à chercher (ex. `viotte`) |
+| `limite` | Non | Nombre maximum de résultats, 1 à 50 (défaut : 10) |
+
+Réponse : `{ arrets: [ { nom, latitude, longitude, accessible, quais } ] }`
+
+### `ginko.get_horaires`
+
+Prochains passages d'un arrêt, qu'il soit suivi par un capteur ou non.
+
+| Champ | Obligatoire | Description |
+|---|---|---|
+| `nom` | ✅ Oui | Nom de l'arrêt (correspondance approximative acceptée) |
+| `nb` | Non | Passages par ligne et direction, 1 à 5 (défaut : 3) |
+
+Réponse : `{ nom, nb_passages, passages: [ … ] }`. Chaque passage a la même structure que l'attribut `passages` des capteurs (`numLignePublic`, `destination`, `temps`, `tempsEnSeconde`, `fiable`, `typeDeTemps`, `couleurFond`…).
+
+**Exemple dans un script :**
+
+```yaml
+sequence:
+  - action: ginko.get_horaires
+    data:
+      nom: "Gare Viotte"
+      nb: 2
+    response_variable: horaires
+  - action: notify.mobile_app
+    data:
+      message: >
+        Prochain {{ horaires.passages[0].numLignePublic }} vers
+        {{ horaires.passages[0].destination }} dans {{ horaires.passages[0].temps }}
+```
+
+**Exemple depuis une autre intégration (Python) :**
+
+```python
+resp = await hass.services.async_call(
+    "ginko", "get_horaires",
+    {"nom": "Gare Viotte", "nb": 3},
+    blocking=True, return_response=True,
+)
+passages = resp["passages"]
+```
+
+---
+
 ## Référence des attributs des capteurs
 
 ### Mode Lieu (`sensor.ginko_<nom_arret>`)
@@ -305,7 +391,7 @@ entity: sensor.ginko_bus_ligne_7
 | `nom_arret` | string | Nom de l'arrêt |
 | `passages` | liste | Liste des objets de passage (voir ci-dessous) |
 
-### Mode Liste (`sensor.ginko_<nom>_<id_ligne>_aller/retour`) {#mode-liste}
+### Mode Liste (`sensor.ginko_<nom>_<id_ligne>_aller/retour`)
 
 | Attribut | Type | Description |
 |---|---|---|
@@ -318,7 +404,7 @@ entity: sensor.ginko_bus_ligne_7
 | `couleurTexte` | string | Couleur du texte de la ligne (hex) |
 | `modeTransport` | string | Type de transport (bus, tram…) |
 | `typeDeTemps` | int | 0 = temps relatif, 1 = heure absolue, 2 = texte de remplacement |
-| `déviation` | bool | true si le passage est remplacé par un texte (« Déviation », « Travaux »…) |
+| `deviation` | bool | `true` si le passage est remplacé par un texte (« Déviation », « Travaux », « Bus complet »…) |
 
 ### Mode Personne (`sensor.ginko_proximite_<person_name>`)
 
@@ -450,7 +536,7 @@ Options disponibles selon le mode :
 **Solutions :**
 1. Les fichiers JS sont enregistrés automatiquement au démarrage — **redémarrez Home Assistant**
 2. Rechargez la page — les URLs sont versionnées, un rechargement suffit après une mise à jour
-3. Vérifiez que les entrées Ressources sont listées avec un suffixe '?v=<version>'
+3. Vérifiez que les entrées Ressources sont listées avec un suffixe `?v=<version>`
 
 ---
 

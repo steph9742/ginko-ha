@@ -164,5 +164,35 @@
         }
       }
     }
+  },
+  "services": {
+    "chercher_arret": {
+      "name": "Search a stop",
+      "description": "Searches Ginko stops by name (accent- and case-insensitive). Returns the matching stops.",
+      "fields": {
+        "recherche": {
+          "name": "Search",
+          "description": "Text to look for in stop names (e.g. \"viotte\")."
+        },
+        "limite": {
+          "name": "Limit",
+          "description": "Maximum number of results (1 to 50)."
+        }
+      }
+    },
+    "get_horaires": {
+      "name": "Stop departures",
+      "description": "Returns the next departures at a stop, whether it is tracked by a sensor or not.",
+      "fields": {
+        "nom": {
+          "name": "Stop",
+          "description": "Stop name (fuzzy match accepted)."
+        },
+        "nb": {
+          "name": "Departures",
+          "description": "Number of departures per line and direction (1 to 5)."
+        }
+      }
+    }
   }
 }
