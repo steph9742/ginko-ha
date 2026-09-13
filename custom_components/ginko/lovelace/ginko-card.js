@@ -1,7 +1,7 @@
 // custom_components/ginko/lovelace/ginko-card.js
 // Ginko Besançon — Lovelace custom card
 
-const VERSION = "1.2.0";
+const VERSION = "1.2.1";
 
 // ── SVG icons ────────────────────────────────────────────────────────────────
 
@@ -160,11 +160,11 @@ const STYLES = `
   .gk-pill-disruption { font-size:11px; font-weight:600; color:#b45309; font-style:italic; }
   .gk-dir-prec { font-size:9px; color:var(--gk-txt-3); font-weight:400; text-transform:none; letter-spacing:0; }
   /* Alert — bandeau perturbations en haut de carte */
-  .gk-alert { margin:0 10px 6px; padding:8px 10px; font-size:12px; background:rgba(245,158,11,0.10); border:0.5px solid rgba(245,158,11,0.40); border-left:3px solid #d97706; color:var(--gk-txt); display:flex; flex-direction:column; gap:5px; border-radius:var(--gk-r-md); }
+  .gk-alert { margin:0 10px 6px; padding:8px 10px; font-size:12px; background:rgba(245,158,11,0.10); border:0.5px solid rgba(245,158,11,0.40); border-left:3px solid #d97706; color:var(--gk-txt); display:flex; flex-direction:column; gap:5px; border-radius:var(--gk-r-md); min-width:0; overflow:hidden; }
   .gk-alert-row { display:flex; gap:6px; align-items:flex-start; line-height:1.35; min-width:0; }
   .gk-alert-row svg { width:13px; height:13px; flex-shrink:0; margin-top:1px; color:#d97706; }
-  .gk-alert-badge { font-size:10px; font-weight:700; color:var(--gk-txt); background:rgba(245,158,11,0.22); padding:1px 6px; border-radius:99px; white-space:nowrap; flex-shrink:0; }
-  .gk-alert-txt { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+  .gk-alert-badge { font-size:10px; font-weight:700; color:var(--gk-txt); background:rgba(245,158,11,0.22); padding:1px 6px; border-radius:99px; white-space:nowrap; flex-shrink:0; max-width:45%; overflow:hidden; text-overflow:ellipsis; }
+  .gk-alert-txt { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; overflow-wrap:anywhere; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
   .gk-alert-more { font-size:10px; color:var(--gk-txt-3); font-style:italic; padding-left:19px; }
   /* Misc */
   .gk-empty   { padding:20px 14px; font-size:13px; color:var(--gk-txt-3); text-align:center; }
@@ -593,7 +593,9 @@ class GinkoCard extends HTMLElement {
         titre = _esc(raw.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 120));
       }
       const badge = Array.isArray(m.lignes) && m.lignes.length
-        ? `<span class="gk-alert-badge">${m.lignes.map(l => _esc(String(l))).join(" · ")}</span>`
+        ? `<span class="gk-alert-badge" title="${m.lignes.map(l => _esc(String(l))).join(", ")}">${
+            m.lignes.slice(0, 4).map(l => _esc(String(l))).join(" · ")
+          }${m.lignes.length > 4 ? ` +${m.lignes.length - 4}` : ""}</span>`
         : "";
       return `<div class="gk-alert-row">${ICON_WARN}${badge}<span class="gk-alert-txt">${titre}</span></div>`;
     }).join("");
