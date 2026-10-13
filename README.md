@@ -369,9 +369,11 @@ refresh: 30
 
 Affiche :
 - Un fond de carte OpenStreetMap (sans clé), passé en sombre automatiquement avec le thème
-- Un marqueur par véhicule aux couleurs de sa ligne, en forme de goutte pointée dans le sens de marche (carré pour un tram), déplacé en douceur à chaque mise à jour ; halo animé quand le véhicule est à quai, point ambre quand il a plus de 2 min de retard
+- Un marqueur par véhicule aux couleurs de sa ligne, en forme de goutte pointée dans le sens de marche (carré pour un tram), déplacé en douceur à chaque mise à jour ; halo animé quand le véhicule est à quai, pastille ambre « +N » avec le retard en minutes à partir de 2 min ; une légende rappelle ces codes sous la carte
+- Les véhicules qui attendent à leur terminus restent visibles (statut « au départ ») jusqu'à 25 min avant leur prochaine course
+- Deux boutons sur la carte : centrer sur la personne (appui long : suivre la personne en continu) et cadrer sur les véhicules affichés
 - Au clic : ligne, terminus, position (arrêt précédent → prochain arrêt), retard, puis **l'heure estimée d'arrivée aux cinq prochains arrêts**, et le numéro du véhicule
-- Des filtres par ligne sur une rangée défilante (mémorisés dans le navigateur)
+- Des filtres par ligne sur une rangée défilante (mémorisés dans le navigateur) ; les lignes scolaires (D…) sont masquées sauf option `scolaires`
 - Un champ de recherche d'arrêt : l'arrêt est épinglé sur la carte, seuls les véhicules des lignes qui le desservent restent affichés, et ses prochains passages apparaissent sous la carte
 - La position d'une personne, si configurée
 
@@ -394,7 +396,9 @@ person_entity: person.moi   # optionnel
 | `hauteur` | Non | Hauteur de la carte en pixels, 200 à 900 (défaut : 360) |
 | `zoom` | Non | Zoom initial, 10 à 18 (défaut : 13) |
 | `centre` | Non | `[latitude, longitude]` du centre initial (défaut : centre de Besançon) |
-| `lignes` | Non | Restreint la carte à ces lignes ; vide = toutes |
+| `lignes` | Non | Restreint la carte à ces lignes (cases à cocher dans l'éditeur) ; vide = toutes |
+| `scolaires` | Non | `true` pour afficher les lignes scolaires D… (défaut : masquées) |
+| `suivre_personne` | Non | `true` pour garder la carte centrée sur la personne (défaut : `false`) |
 | `arret` | Non | Arrêt affiché au chargement |
 | `person_entity` | Non | Entité `person` à afficher sur la carte |
 | `messages_entity` | Non | Capteur des messages pour le bandeau infotrafic des passages |

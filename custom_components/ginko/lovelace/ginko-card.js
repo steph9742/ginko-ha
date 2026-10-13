@@ -1,7 +1,7 @@
 // custom_components/ginko/lovelace/ginko-card.js
 // Ginko Besançon — Lovelace custom card
 
-const VERSION = "1.4.1";
+const VERSION = "1.4.2";
 
 // ── SVG icons ────────────────────────────────────────────────────────────────
 
@@ -655,6 +655,8 @@ class GinkoCard extends HTMLElement {
 
 // ── Recherche card ────────────────────────────────────────────────────────────
 
+const ICON_TARGET = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>`;
+const ICON_FIT    = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>`;
 const ICON_SEARCH = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg>`;
 const ICON_CLEAR  = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>`;
 
@@ -1337,7 +1339,16 @@ const VEHICULES_STYLES = `
   .gk-veh2 svg { position:absolute; inset:0; width:40px; height:40px; z-index:1; transform-origin:50% 54%; filter:drop-shadow(0 1px 2px rgba(0,0,0,0.45)); transition:transform 0.9s linear; }
   .gk-veh2-lbl { position:absolute; z-index:2; left:0; right:0; top:0; bottom:0; padding-top:3px; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; font-family:var(--paper-font-body1_-_font-family, system-ui, sans-serif); letter-spacing:-0.02em; pointer-events:none; text-shadow:0 0 2px rgba(0,0,0,0.25); }
   .gk-veh2.quai::before { content:""; position:absolute; left:8px; top:9.5px; width:24px; height:24px; border-radius:50%; border:2px solid var(--c, #888); animation:gk-pulse 1.8s ease-out infinite; pointer-events:none; }
-  .gk-veh2.late::after { content:""; position:absolute; right:4px; top:6px; width:9px; height:9px; border-radius:50%; background:#f59e0b; border:1.5px solid #fff; }
+  .gk-veh2.late::after { content:attr(data-retard); position:absolute; right:-2px; top:1px; z-index:3; min-width:14px; height:14px; padding:0 3px; border-radius:7px; background:#f59e0b; color:#111; border:1.5px solid #fff; font-size:9px; font-weight:800; line-height:14px; text-align:center; font-family:var(--paper-font-body1_-_font-family, system-ui, sans-serif); box-shadow:0 1px 2px rgba(0,0,0,0.35); }
+  .gk-map-ctl { position:absolute; right:10px; top:10px; z-index:1000; display:flex; flex-direction:column; gap:6px; }
+  .gk-map-btn { width:30px; height:30px; border-radius:6px; border:0.5px solid rgba(0,0,0,0.25); background:#fff; color:#333; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 1px 4px rgba(0,0,0,0.3); padding:0; }
+  .gk-map-btn svg { width:17px; height:17px; }
+  .gk-map-btn.on { background:#dbeafe; color:#1d4ed8; }
+  .gk-map.dark .gk-map-btn { background:#2a2a2a; color:#ddd; border-color:rgba(255,255,255,0.2); }
+  .gk-map.dark .gk-map-btn.on { background:#1e3a8a; color:#bfdbfe; }
+  .gk-legend { padding:5px 12px; font-size:10px; color:var(--gk-txt-3); display:flex; gap:12px; flex-wrap:wrap; border-bottom:0.5px solid var(--gk-border); }
+  .gk-legend span { display:inline-flex; align-items:center; gap:4px; }
+  .gk-legend i { display:inline-block; width:9px; height:9px; border-radius:50%; }
   @keyframes gk-pulse { 0% { transform:scale(1); opacity:0.8; } 100% { transform:scale(2); opacity:0; } }
   .gk-veh.dim { opacity:0.25; }
   .gk-stop-pin { width:14px; height:14px; border-radius:50%; background:#fff; border:3px solid #111; box-shadow:0 0 0 2px #fff, 0 1px 4px rgba(0,0,0,0.4); }
@@ -1398,6 +1409,8 @@ class GinkoVehiculesCard extends GinkoRechercheCard {
       zoom:            num(config.zoom, 13, 10, 18),
       centre,
       lignes:          Array.isArray(config.lignes) ? config.lignes.map(String) : [],
+      scolaires:       config.scolaires ?? false,
+      suivre_personne: config.suivre_personne ?? false,
       arret:           config.arret ?? "",
       placeholder:     config.placeholder ?? "Voir les passages à un arrêt…",
       remember:        config.remember ?? true,
@@ -1469,7 +1482,14 @@ class GinkoVehiculesCard extends GinkoRechercheCard {
         <span class="gk-header-upd"></span>
       </div>
       <div class="gk-filters"></div>
-      <div class="gk-map" style="height:${this._config.hauteur}px"><div class="gk-map-msg">Chargement de la carte…</div></div>
+      <div class="gk-map" style="height:${this._config.hauteur}px">
+        <div class="gk-map-msg">Chargement de la carte…</div>
+        <div class="gk-map-ctl">
+          ${this._config.person_entity ? `<button class="gk-map-btn gk-btn-person${this._config.suivre_personne ? " on" : ""}" title="Centrer sur la personne (clic long : suivre)">${ICON_TARGET}</button>` : ""}
+          <button class="gk-map-btn gk-btn-fit" title="Cadrer sur les véhicules affichés">${ICON_FIT}</button>
+        </div>
+      </div>
+      <div class="gk-legend"><span>Goutte : sens de marche</span><span><i style="border:2px solid #888;width:7px;height:7px"></i>halo : à quai</span><span><i style="background:#f59e0b"></i>retard en minutes</span></div>
       <div class="gk-search-hd">
         ${ICON_SEARCH}
         <input class="gk-search-in" type="text" autocomplete="off" spellcheck="false"
@@ -1480,7 +1500,16 @@ class GinkoVehiculesCard extends GinkoRechercheCard {
       <div class="gk-results"></div>
     </div>`;
     this._shellBuilt = true;
+    this._suivre = !!this._config.suivre_personne;
     this._bindSearch();
+    const btnPerson = this.shadowRoot.querySelector(".gk-btn-person");
+    if (btnPerson) {
+      let timer = null;
+      btnPerson.addEventListener("pointerdown", () => { timer = setTimeout(() => { timer = null; this._suivre = !this._suivre; btnPerson.classList.toggle("on", this._suivre); this._centerPerson(); }, 600); });
+      btnPerson.addEventListener("pointerup", () => { if (timer) { clearTimeout(timer); timer = null; this._centerPerson(); } });
+      btnPerson.addEventListener("pointerleave", () => { if (timer) { clearTimeout(timer); timer = null; } });
+    }
+    this.shadowRoot.querySelector(".gk-btn-fit").addEventListener("click", () => this._fitVehicules());
     this.shadowRoot.querySelector(".gk-filters").addEventListener("click", e => {
       const chip = e.target.closest(".gk-chip");
       if (!chip) return;
@@ -1578,8 +1607,27 @@ class GinkoVehiculesCard extends GinkoRechercheCard {
   _lignesDisponibles() {
     const present = new Set(this._vehicules().map(b => String(b.ligne ?? "")));
     const restrict = this._config.lignes;
-    const all = [...present].filter(l => l && (!restrict.length || restrict.includes(l)));
+    const all = [...present].filter(l => l && (!restrict.length || restrict.includes(l)) && (this._config.scolaires || !/^D\d/i.test(l)));
     return all.sort(_naturalCompare);
+  }
+
+  _personLatLng() {
+    const person = this._config.person_entity ? this._hass?.states[this._config.person_entity] : null;
+    const lat = person?.attributes?.latitude, lon = person?.attributes?.longitude;
+    return lat != null && lon != null ? [Number(lat), Number(lon)] : null;
+  }
+
+  _centerPerson() {
+    const ll = this._personLatLng();
+    if (ll && this._map) this._map.panTo(ll, { animate: true });
+  }
+
+  _fitVehicules() {
+    if (!this._map || !this._L) return;
+    const pts = this._visible().map(b => [Number(b.lat), Number(b.lon)]);
+    if (this._arretCoords) pts.push(this._arretCoords);
+    if (!pts.length) return;
+    this._map.fitBounds(this._L.latLngBounds(pts).pad(0.15), { animate: true, maxZoom: 16 });
   }
 
   _lignesArret() {
@@ -1675,7 +1723,7 @@ class GinkoVehiculesCard extends GinkoRechercheCard {
     const rot = b.cap != null ? Number(b.cap) : 0;
     return this._L.divIcon({
       className: "gk-veh-wrap",
-      html: `<div class="gk-veh2${b.statut === "a_quai" ? " quai" : ""}${late ? " late" : ""}" style="--c:${bg}">
+      html: `<div class="gk-veh2${b.statut === "a_quai" ? " quai" : ""}${late ? " late" : ""}" style="--c:${bg}" data-retard="+${Math.round(Number(b.retard) / 60) || 0}">
         <svg viewBox="0 0 40 40" style="transform:rotate(${rot}deg)"><path d="${this._shapePath(b)}" fill="${bg}" stroke="#fff" stroke-width="2" stroke-linejoin="round"/></svg>
         <span class="gk-veh2-lbl" style="color:${fg}">${_esc(String(b.ligne ?? "?"))}</span>
       </div>`,
@@ -1694,6 +1742,7 @@ class GinkoVehiculesCard extends GinkoRechercheCard {
     if (svg) svg.style.transform = `rotate(${b.cap != null ? Number(b.cap) : 0}deg)`;
     root.classList.toggle("quai", b.statut === "a_quai");
     root.classList.toggle("late", Number(b.retard) >= 120);
+    root.dataset.retard = `+${Math.round(Number(b.retard) / 60) || 0}`;
     return true;
   }
 
@@ -1764,15 +1813,18 @@ class GinkoVehiculesCard extends GinkoRechercheCard {
       this._map.removeLayer(this._stopMarker); this._stopMarker = null;
     }
     const person = this._config.person_entity ? this._hass.states[this._config.person_entity] : null;
-    const plat = person?.attributes?.latitude, plon = person?.attributes?.longitude;
-    if (plat != null && plon != null) {
+    const pll = this._personLatLng();
+    if (pll) {
       if (!this._personMarker) {
-        this._personMarker = L.marker([plat, plon], {
+        this._personMarker = L.marker(pll, {
           icon: L.divIcon({ className: "gk-veh-wrap", html: `<div class="gk-person-pin"></div>`, iconSize: [14, 14], iconAnchor: [7, 7] }),
           zIndexOffset: 400, title: person.attributes.friendly_name ?? person.entity_id,
         }).addTo(this._map);
+        if (this._suivre) this._map.setView(pll, this._map.getZoom(), { animate: false });
       } else {
-        this._personMarker.setLatLng([plat, plon]);
+        const moved = this._personMarker.getLatLng().distanceTo(pll) > 5;
+        this._personMarker.setLatLng(pll);
+        if (this._suivre && moved) this._map.panTo(pll, { animate: true });
       }
     } else if (this._personMarker) {
       this._map.removeLayer(this._personMarker); this._personMarker = null;

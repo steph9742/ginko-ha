@@ -663,8 +663,14 @@ class GinkoVehiculesCardEditor extends HTMLElement {
   _render() {
     const cfg = this._config;
     const centre = Array.isArray(cfg.centre) && cfg.centre.length === 2 ? cfg.centre.join(", ") : "";
-    const lignes = Array.isArray(cfg.lignes) ? cfg.lignes.join(", ") : "";
+    const selection = Array.isArray(cfg.lignes) ? cfg.lignes.map(String) : [];
     const persons = this._hass ? Object.keys(this._hass.states).filter(id => id.startsWith("person.")).sort() : [];
+    const known = new Set(selection);
+    const etat = this._hass?.states["sensor.ginko_etat_lignes"]?.attributes?.lignes;
+    if (Array.isArray(etat)) etat.forEach(l => { if (l?.num) known.add(String(l.num)); });
+    const veh = this._hass?.states[cfg.entity ?? "sensor.ginko_vehicules"]?.attributes?.lignes;
+    if (Array.isArray(veh)) veh.forEach(l => known.add(String(l)));
+    const lignesDispo = [...known].filter(l => cfg.scolaires || known.size <= 30 || !/^D\d/i.test(l) || selection.includes(l)).sort((a, b) => a.localeCompare(b, "fr", { numeric: true }));
     this.shadowRoot.innerHTML = `<style>${EDITOR_STYLES}</style>
     <div class="gk-editor">
 
@@ -691,9 +697,13 @@ class GinkoVehiculesCardEditor extends HTMLElement {
       </div>
 
       <div class="gk-field">
-        <label>Lignes affichées <span style="font-weight:400;text-transform:none">(optionnel)</span></label>
-        <input id="lignes" type="text" value="${this._esc(lignes)}" placeholder="L3, T1, 7">
-        <div class="gk-hint">Vide = toutes les lignes. Les filtres de la carte restent disponibles dans cette liste.</div>
+        <label>Lignes affichées</label>
+        ${lignesDispo.length ? `<div class="gk-checks">${lignesDispo.map(l => `<label class="gk-check-label"><input type="checkbox" class="gk-ligne-cb" data-ligne="${this._esc(l)}" ${selection.includes(l) ? "checked" : ""}>${this._esc(l)}</label>`).join("")}</div>` : `<div class="gk-hint">Aucune ligne connue pour l'instant (l'intégration doit avoir chargé l'état des lignes ou les véhicules).</div>`}
+        <div class="gk-hint">Aucune case cochée = toutes les lignes. Les filtres de la carte restent disponibles parmi les lignes cochées.</div>
+      </div>
+
+      <div class="gk-field">
+        <label class="gk-check-label"><input id="scolaires" type="checkbox" ${cfg.scolaires ? "checked" : ""}> Afficher les lignes scolaires (D…)</label>
       </div>
 
       <div class="gk-field">
@@ -707,7 +717,11 @@ class GinkoVehiculesCardEditor extends HTMLElement {
           <option value="">Aucune</option>
           ${persons.map(id => `<option value="${this._esc(id)}" ${cfg.person_entity === id ? "selected" : ""}>${this._esc(id)}</option>`).join("")}
         </select>
-        <div class="gk-hint">Affiche la position de la personne sur la carte.</div>
+        <div class="gk-hint">Affiche la position de la personne sur la carte, avec un bouton pour s'y centrer.</div>
+      </div>
+
+      <div class="gk-field">
+        <label class="gk-check-label"><input id="suivre_personne" type="checkbox" ${cfg.suivre_personne ? "checked" : ""}> Garder la carte centrée sur la personne</label>
       </div>
 
       <div class="gk-field">
@@ -748,7 +762,23 @@ class GinkoVehiculesCardEditor extends HTMLElement {
       const parts = v.split(",").map(x => Number(x.trim())).filter(x => Number.isFinite(x));
       return parts.length === 2 ? parts : null;
     });
-    bind("lignes", "lignes", v => v.split(",").map(x => x.trim()).filter(Boolean));
+    this.shadowRoot.querySelectorAll(".gk-ligne-cb").forEach(cb => {
+      cb.addEventListener("change", () => {
+        const sel = [...this.shadowRoot.querySelectorAll(".gk-ligne-cb")].filter(x => x.checked).map(x => x.dataset.ligne);
+        const cfg = { ...this._config };
+        if (sel.length) cfg.lignes = sel; else delete cfg.lignes;
+        emit(cfg);
+      });
+    });
+    for (const key of ["scolaires", "suivre_personne"]) {
+      const el = this.shadowRoot.querySelector(`#${key}`);
+      if (el) el.addEventListener("change", e => {
+        const cfg = { ...this._config };
+        if (e.target.checked) cfg[key] = true; else delete cfg[key];
+        emit(cfg);
+        if (key === "scolaires") this._render();
+      });
+    }
     bind("arret", "arret");
     bind("person_entity", "person_entity");
     bind("messages_entity", "messages_entity");
@@ -764,8 +794,10 @@ class GinkoVehiculesCardEditor extends HTMLElement {
       c.zoom != null ? `zoom: ${c.zoom}` : null,
       Array.isArray(c.centre) ? `centre: [${c.centre.join(", ")}]` : null,
       Array.isArray(c.lignes) && c.lignes.length ? `lignes: [${c.lignes.join(", ")}]` : null,
+      c.scolaires ? `scolaires: true` : null,
       c.arret ? `arret: ${c.arret}` : null,
       c.person_entity ? `person_entity: ${c.person_entity}` : null,
+      c.suivre_personne ? `suivre_personne: true` : null,
       c.messages_entity ? `messages_entity: ${c.messages_entity}` : null,
       c.tuiles ? `tuiles: ${c.tuiles}` : null,
     ].filter(Boolean).join("\n");

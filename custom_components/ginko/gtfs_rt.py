@@ -10,7 +10,7 @@ from .gtfs import GinkoGtfs, _bearing as _bearing_ll
 
 SKIPPED = rt.TripUpdate.StopTimeUpdate.SKIPPED
 A_QUAI_SEC = 30
-DEPART_SEC = 120
+TERMINUS_SEC = 1500
 
 
 def _bearing(a: dict, b: dict) -> int | None:
@@ -92,17 +92,18 @@ def parse_trip_updates(raw: bytes, gtfs: GinkoGtfs, now: int) -> dict:
             )
 
         started = first_seq > 1
-        if not started and (est_first is None or est_first - now > DEPART_SEC):
+        has_vid = bool(tu.vehicle.id) and tu.vehicle.id != "0"
+        if not started and (not has_vid or est_first is None or est_first - now > TERMINUS_SEC):
             continue
         dans_sec = max(0, (est_first or now) - now)
-        if dans_sec <= A_QUAI_SEC:
-            statut = "a_quai"
-        elif not started:
+        if not started:
             statut = "depart"
+        elif dans_sec <= A_QUAI_SEC:
+            statut = "a_quai"
         else:
             statut = "en_route"
         prev_seq = first_seq - 1
-        vid = tu.vehicle.id if tu.vehicle.id and tu.vehicle.id != "0" else f"trip:{trip_id}"
+        vid = tu.vehicle.id if has_vid else f"trip:{trip_id}"
         bus = {
             "id": vid,
             "num_vehicule": None,
