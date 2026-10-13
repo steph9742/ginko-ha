@@ -6,7 +6,7 @@ from datetime import datetime
 
 from google.transit import gtfs_realtime_pb2 as rt
 
-from .gtfs import GinkoGtfs
+from .gtfs import GinkoGtfs, _bearing as _bearing_ll
 
 SKIPPED = rt.TripUpdate.StopTimeUpdate.SKIPPED
 A_QUAI_SEC = 30
@@ -16,26 +16,36 @@ DEPART_SEC = 120
 def _bearing(a: dict, b: dict) -> int | None:
     if None in (a.get("lat"), a.get("lon"), b.get("lat"), b.get("lon")):
         return None
-    la1, la2 = math.radians(a["lat"]), math.radians(b["lat"])
-    dlon = math.radians(b["lon"] - a["lon"])
-    x = math.sin(dlon) * math.cos(la2)
-    y = math.cos(la1) * math.sin(la2) - math.sin(la1) * math.cos(la2) * math.cos(dlon)
-    return int(math.degrees(math.atan2(x, y)) % 360)
+    return _bearing_ll(a["lat"], a["lon"], b["lat"], b["lon"])
 
 
-def _position(gtfs: GinkoGtfs, theo: dict, prev_seq: int, first_seq: int, midnight: int, est_first, retard, now: int, started: bool) -> dict:
-    nxt = gtfs.stops.get(theo[first_seq][0], {}) if first_seq in theo else {}
-    prv = gtfs.stops.get(theo[prev_seq][0], {}) if prev_seq in theo else {}
-    out = {"lat": nxt.get("lat"), "lon": nxt.get("lon"), "cap": None, "progression_segment": 1.0}
+def _position(gtfs: GinkoGtfs, trip: dict, theo: dict, prev_seq: int, first_seq: int, midnight: int, est_first, retard, now: int, started: bool) -> dict:
+    nxt_id = theo[first_seq][0] if first_seq in theo else None
+    prv_id = theo[prev_seq][0] if prev_seq in theo else None
+    nxt = gtfs.stops.get(nxt_id, {}) if nxt_id else {}
+    prv = gtfs.stops.get(prv_id, {}) if prv_id else {}
+    out = {"lat": nxt.get("lat"), "lon": nxt.get("lon"), "cap": None, "progression_segment": 1.0, "trace": "arret"}
     if not started or not prv or prv.get("lat") is None or nxt.get("lat") is None or est_first is None:
         return out
     prev_est = midnight + theo[prev_seq][1] + (retard or 0)
     span = est_first - prev_est
     frac = 1.0 if span <= 0 else max(0.0, min(1.0, (now - prev_est) / span))
+    out["progression_segment"] = round(frac, 2)
+    shape_id = trip.get("shape_id")
+    if shape_id and shape_id != "0":
+        dp = gtfs.shape_distance(shape_id, prv_id)
+        dn = gtfs.shape_distance(shape_id, nxt_id)
+        if dp is not None and dn is not None and dn > dp:
+            pt = gtfs.shape_point(shape_id, dp + (dn - dp) * frac)
+            if pt:
+                out["lat"], out["lon"] = round(pt[0], 6), round(pt[1], 6)
+                out["cap"] = pt[2] if pt[2] is not None else _bearing(prv, nxt)
+                out["trace"] = "shape"
+                return out
     out["lat"] = round(prv["lat"] + (nxt["lat"] - prv["lat"]) * frac, 6)
     out["lon"] = round(prv["lon"] + (nxt["lon"] - prv["lon"]) * frac, 6)
     out["cap"] = _bearing(prv, nxt)
-    out["progression_segment"] = round(frac, 2)
+    out["trace"] = "droite"
     return out
 
 
@@ -101,7 +111,16 @@ def parse_trip_updates(raw: bytes, gtfs: GinkoGtfs, now: int) -> dict:
             "couleurFond": route.get("couleurFond"),
             "couleurTexte": route.get("couleurTexte"),
             "mode": "tram" if route.get("type") == "0" else "bus",
-            **_position(gtfs, theo, prev_seq, first_seq, midnight, est_first, retard_first, now, started),
+            **_position(gtfs, trip, theo, prev_seq, first_seq, midnight, est_first, retard_first, now, started),
+            "prochains": [
+                {
+                    "nom": gtfs.stop_name(theo[u.stop_sequence][0]) if u.stop_sequence in theo else None,
+                    "heure": _event(u),
+                    "dans_sec": max(0, _event(u) - now) if _event(u) else None,
+                    "non_desservi": u.schedule_relationship == SKIPPED,
+                }
+                for u in updates[:6]
+            ],
             "sens": "aller" if aller else "retour",
             "terminus": trip["headsign"],
             "prochain_arret": gtfs.stop_name(theo[first_seq][0]) if first_seq in theo else None,

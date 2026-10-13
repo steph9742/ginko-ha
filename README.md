@@ -244,7 +244,7 @@ Créé automatiquement quand les droits sont présents. État : nombre de véhic
 |---|---|
 | `vehicules` | Liste des véhicules, même structure que `buses` du mode 5 (voir la référence), avec en plus `ligne`, `id_ligne`, `retard`, `progression` et `arrets_restants` |
 | `lignes` | Lignes ayant au moins un véhicule en circulation |
-| *(par véhicule)* | `lat`, `lon` (position estimée), `cap` (degrés), `progression_segment` (0 à 1 entre les deux arrêts), `mode` (`bus` ou `tram`), `couleurFond`, `couleurTexte` |
+| *(par véhicule)* | `lat`, `lon` (position estimée sur le tracé), `cap` (degrés), `progression_segment` (0 à 1 entre les deux arrêts), `trace` (`shape`, `droite` ou `arret`), `mode` (`bus` ou `tram`), `couleurFond`, `couleurTexte`, `prochains` (6 prochains arrêts : `nom`, `heure`, `dans_sec`, `non_desservi`) |
 | `horodatage` | Date du flux |
 
 > Le flux ne contient pas de position GPS : la position est exprimée par l'arrêt précédent, le prochain arrêt et le temps restant, comme en mode 5. L'identifiant `id` est l'identifiant interne du véhicule dans le flux ; le numéro public (`num_vehicule`, celui affiché sur le bus) est renseigné dès que l'intégration l'a appris en croisant avec l'API REST.
@@ -369,13 +369,13 @@ refresh: 30
 
 Affiche :
 - Un fond de carte OpenStreetMap (sans clé), passé en sombre automatiquement avec le thème
-- Un marqueur par véhicule aux couleurs de sa ligne, orienté dans le sens de marche (rond pour un bus, carré arrondi pour un tram), déplacé en douceur à chaque mise à jour
-- Au clic : ligne, terminus, position (arrêt précédent → prochain arrêt), temps avant le prochain arrêt, retard, numéro du véhicule
-- Des filtres par ligne (mémorisés dans le navigateur)
+- Un marqueur par véhicule aux couleurs de sa ligne, en forme de goutte pointée dans le sens de marche (carré pour un tram), déplacé en douceur à chaque mise à jour ; halo animé quand le véhicule est à quai, point ambre quand il a plus de 2 min de retard
+- Au clic : ligne, terminus, position (arrêt précédent → prochain arrêt), retard, puis **l'heure estimée d'arrivée aux cinq prochains arrêts**, et le numéro du véhicule
+- Des filtres par ligne sur une rangée défilante (mémorisés dans le navigateur)
 - Un champ de recherche d'arrêt : l'arrêt est épinglé sur la carte, seuls les véhicules des lignes qui le desservent restent affichés, et ses prochains passages apparaissent sous la carte
 - La position d'une personne, si configurée
 
-> La position des véhicules est **estimée** entre l'arrêt précédent et le prochain d'après le temps restant (le flux Ginko ne contient pas de GPS). Elle est juste à une ou deux centaines de mètres près, et un véhicule bloqué continue d'« avancer » jusqu'à la prochaine mise à jour de son estimation.
+> La position des véhicules est **estimée** (le flux Ginko ne contient pas de GPS) : le véhicule est placé **sur le tracé réel de sa ligne**, entre l'arrêt précédent et le prochain, d'après le temps restant. Un véhicule bloqué continue d'« avancer » jusqu'à la prochaine mise à jour de son estimation ; le popup signale « position approximative » quand le tracé n'est pas disponible.
 
 **Configuration YAML :**
 

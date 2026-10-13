@@ -1,7 +1,7 @@
 // custom_components/ginko/lovelace/ginko-card.js
 // Ginko Besançon — Lovelace custom card
 
-const VERSION = "1.4.0";
+const VERSION = "1.4.1";
 
 // ── SVG icons ────────────────────────────────────────────────────────────────
 
@@ -1333,21 +1333,34 @@ const VEHICULES_STYLES = `
   .gk-map.dark .leaflet-control-attribution { background:rgba(0,0,0,0.6); color:#aaa; }
   .gk-map-msg { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:12px; color:var(--gk-txt-3); pointer-events:none; }
   .gk-veh-wrap { background:none; border:none; }
-  .gk-veh { position:relative; width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; font-family:var(--paper-font-body1_-_font-family, system-ui, sans-serif); box-shadow:0 1px 4px rgba(0,0,0,0.35), 0 0 0 2px rgba(255,255,255,0.85); letter-spacing:-0.02em; cursor:pointer; }
-  .gk-veh.tram { border-radius:8px; }
+  .gk-veh2 { position:relative; width:40px; height:40px; cursor:pointer; }
+  .gk-veh2 svg { position:absolute; inset:0; width:40px; height:40px; z-index:1; transform-origin:50% 54%; filter:drop-shadow(0 1px 2px rgba(0,0,0,0.45)); transition:transform 0.9s linear; }
+  .gk-veh2-lbl { position:absolute; z-index:2; left:0; right:0; top:0; bottom:0; padding-top:3px; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; font-family:var(--paper-font-body1_-_font-family, system-ui, sans-serif); letter-spacing:-0.02em; pointer-events:none; text-shadow:0 0 2px rgba(0,0,0,0.25); }
+  .gk-veh2.quai::before { content:""; position:absolute; left:8px; top:9.5px; width:24px; height:24px; border-radius:50%; border:2px solid var(--c, #888); animation:gk-pulse 1.8s ease-out infinite; pointer-events:none; }
+  .gk-veh2.late::after { content:""; position:absolute; right:4px; top:6px; width:9px; height:9px; border-radius:50%; background:#f59e0b; border:1.5px solid #fff; }
+  @keyframes gk-pulse { 0% { transform:scale(1); opacity:0.8; } 100% { transform:scale(2); opacity:0; } }
   .gk-veh.dim { opacity:0.25; }
-  .gk-veh-cap { position:absolute; left:50%; top:50%; width:0; height:0; margin:-15px 0 0 -6px; border-left:6px solid transparent; border-right:6px solid transparent; border-bottom:9px solid currentColor; transform-origin:6px 15px; filter:drop-shadow(0 0 1px rgba(0,0,0,0.6)); }
   .gk-stop-pin { width:14px; height:14px; border-radius:50%; background:#fff; border:3px solid #111; box-shadow:0 0 0 2px #fff, 0 1px 4px rgba(0,0,0,0.4); }
   .gk-person-pin { width:14px; height:14px; border-radius:50%; background:#3b82f6; border:2px solid #fff; box-shadow:0 0 0 4px rgba(59,130,246,0.25); }
   .leaflet-marker-icon.gk-veh-wrap { transition:transform 0.9s linear; }
   .leaflet-zoom-anim .leaflet-marker-icon.gk-veh-wrap { transition:none; }
-  .leaflet-popup-content { font-family:var(--paper-font-body1_-_font-family, system-ui, sans-serif); font-size:12px; line-height:1.4; margin:8px 10px; }
+  .leaflet-popup-content { font-family:var(--paper-font-body1_-_font-family, system-ui, sans-serif); font-size:12px; line-height:1.4; margin:8px 10px; min-width:190px; }
   .leaflet-popup-content b { font-size:13px; }
   .gk-popup-badge { display:inline-block; font-size:11px; font-weight:700; padding:1px 6px; border-radius:4px; margin-right:4px; }
+  .gk-popup-pos { color:#555; margin-top:2px; }
   .gk-popup-retard { color:#b45309; font-weight:600; }
   .gk-popup-avance { color:#1d4ed8; font-weight:600; }
-  .gk-filters { padding:7px 10px; display:flex; flex-wrap:wrap; gap:5px; border-bottom:0.5px solid var(--gk-border); }
-  .gk-chip { font-size:11px; font-weight:500; padding:3px 9px; border-radius:99px; border:0.5px solid var(--gk-border); background:transparent; color:var(--gk-txt-2); cursor:pointer; white-space:nowrap; font-family:inherit; display:inline-flex; align-items:center; gap:5px; }
+  .gk-popup-next { margin-top:6px; border-top:0.5px solid rgba(0,0,0,0.12); padding-top:5px; display:grid; grid-template-columns:1fr auto auto; column-gap:8px; row-gap:2px; font-size:11px; }
+  .gk-popup-next .n { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .gk-popup-next .h { font-variant-numeric:tabular-nums; font-weight:600; }
+  .gk-popup-next .d { color:#888; font-variant-numeric:tabular-nums; }
+  .gk-popup-next .first { font-weight:700; }
+  .gk-popup-next .skip { text-decoration:line-through; color:#999; }
+  .gk-popup-foot { color:#888; font-size:10px; margin-top:4px; }
+  .gk-filters { padding:7px 10px; display:flex; flex-wrap:nowrap; gap:5px; border-bottom:0.5px solid var(--gk-border); overflow-x:auto; scrollbar-width:thin; -webkit-overflow-scrolling:touch; }
+  .gk-filters::-webkit-scrollbar { height:4px; }
+  .gk-filters::-webkit-scrollbar-thumb { background:var(--gk-border); border-radius:2px; }
+  .gk-chip { font-size:11px; font-weight:500; padding:3px 9px; border-radius:99px; border:0.5px solid var(--gk-border); background:transparent; color:var(--gk-txt-2); cursor:pointer; white-space:nowrap; font-family:inherit; display:inline-flex; align-items:center; gap:5px; flex-shrink:0; }
   .gk-chip.active { color:var(--gk-txt); background:var(--secondary-background-color,rgba(128,128,128,0.12)); border-color:var(--gk-txt-3); font-weight:600; }
   .gk-chip-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
 `;
@@ -1644,14 +1657,44 @@ class GinkoVehiculesCard extends GinkoRechercheCard {
     }).addTo(this._map);
   }
 
+  _shapePath(b) {
+    const hasCap = b.cap != null;
+    if (b.mode === "tram") {
+      return hasCap
+        ? "M20 2 L27 10 H30 Q34 10 34 14 V31 Q34 35 30 35 H10 Q6 35 6 31 V14 Q6 10 10 10 H13 Z"
+        : "M10 10 H30 Q34 10 34 14 V31 Q34 35 30 35 H10 Q6 35 6 31 V14 Q6 10 10 10 Z";
+    }
+    return hasCap
+      ? "M20 2 L28 12 A12.5 12.5 0 1 1 12 12 Z"
+      : "M20 9.1 A12.5 12.5 0 1 1 19.99 9.1 Z";
+  }
+
   _icon(b) {
     const bg = _color(b.couleurFond ?? "888"), fg = _color(b.couleurTexte ?? "fff");
-    const cap = b.cap != null ? `transform:rotate(${Number(b.cap)}deg)` : "display:none";
+    const late = Number(b.retard) >= 120;
+    const rot = b.cap != null ? Number(b.cap) : 0;
     return this._L.divIcon({
       className: "gk-veh-wrap",
-      html: `<div class="gk-veh${b.mode === "tram" ? " tram" : ""}" style="background:${bg};color:${fg}"><span class="gk-veh-cap" style="${cap}"></span>${_esc(String(b.ligne ?? "?"))}</div>`,
-      iconSize: [30, 30], iconAnchor: [15, 15], popupAnchor: [0, -16],
+      html: `<div class="gk-veh2${b.statut === "a_quai" ? " quai" : ""}${late ? " late" : ""}" style="--c:${bg}">
+        <svg viewBox="0 0 40 40" style="transform:rotate(${rot}deg)"><path d="${this._shapePath(b)}" fill="${bg}" stroke="#fff" stroke-width="2" stroke-linejoin="round"/></svg>
+        <span class="gk-veh2-lbl" style="color:${fg}">${_esc(String(b.ligne ?? "?"))}</span>
+      </div>`,
+      iconSize: [40, 40], iconAnchor: [20, 22], popupAnchor: [0, -20],
     });
+  }
+
+  _applyIconState(m, b) {
+    const root = m.getElement()?.querySelector(".gk-veh2");
+    if (!root) return false;
+    const lbl = root.querySelector(".gk-veh2-lbl");
+    if (!lbl || lbl.textContent !== String(b.ligne ?? "?")) return false;
+    const path = root.querySelector("path");
+    const svg = root.querySelector("svg");
+    if (path) path.setAttribute("d", this._shapePath(b));
+    if (svg) svg.style.transform = `rotate(${b.cap != null ? Number(b.cap) : 0}deg)`;
+    root.classList.toggle("quai", b.statut === "a_quai");
+    root.classList.toggle("late", Number(b.retard) >= 120);
+    return true;
   }
 
   _popup(b) {
@@ -1665,11 +1708,18 @@ class GinkoVehiculesCard extends GinkoRechercheCard {
     const retard = Number.isFinite(r) && Math.abs(r) >= 60
       ? (r > 0 ? `<div class="gk-popup-retard">Retard ${Math.round(r / 60)} min</div>` : `<div class="gk-popup-avance">Avance ${Math.round(-r / 60)} min</div>`)
       : "";
-    const dans = b.dans_sec != null && b.statut !== "a_quai" ? `<div>Prochain arrêt dans ${Math.max(1, Math.round(b.dans_sec / 60))} min</div>` : "";
+    const prochains = Array.isArray(b.prochains) ? b.prochains.filter(p => p?.nom) : [];
+    const now = Math.floor(Date.now() / 1000);
+    const rows = prochains.slice(0, 5).map((p, i) => {
+      const dans = p.heure ? Math.max(0, Math.round((p.heure - now) / 60)) : null;
+      const cls = `${i === 0 ? "first" : ""}${p.non_desservi ? " skip" : ""}`;
+      return `<span class="n ${cls}">${_esc(p.nom)}</span><span class="h ${cls}">${p.heure ? _hhmm(p.heure) : "—"}</span><span class="d ${cls}">${p.non_desservi ? "non desservi" : dans == null ? "" : dans === 0 ? "maintenant" : `${dans} min`}</span>`;
+    }).join("");
     const num = b.num_vehicule ?? b.id;
     return `<span class="gk-popup-badge" style="background:${bg};color:${fg}">${_esc(String(b.ligne ?? "?"))}</span><b>→ ${_esc(b.terminus ?? "")}</b>
-      <div>${pos}</div>${dans}${retard}
-      <div style="color:#888;font-size:10px;margin-top:3px">${b.mode === "tram" ? "Tram" : "Bus"} n° ${_esc(String(num ?? "?"))}</div>`;
+      <div class="gk-popup-pos">${pos}</div>${retard}
+      ${rows ? `<div class="gk-popup-next">${rows}</div>` : ""}
+      <div class="gk-popup-foot">${b.mode === "tram" ? "Tram" : "Bus"} n° ${_esc(String(num ?? "?"))}${b.trace === "droite" ? " · position approximative" : ""}</div>`;
   }
 
   _updateMap(force = false) {
@@ -1688,15 +1738,11 @@ class GinkoVehiculesCard extends GinkoRechercheCard {
       const ll = [Number(b.lat), Number(b.lon)];
       if (!m) {
         m = L.marker(ll, { icon: this._icon(b), title: `${b.ligne} → ${b.terminus ?? ""}` }).addTo(this._map);
-        m.bindPopup(() => this._popup(m._gkBus), { closeButton: false, maxWidth: 240 });
+        m.bindPopup(() => this._popup(m._gkBus), { closeButton: false, maxWidth: 260 });
         this._markers.set(key, m);
       } else {
         m.setLatLng(ll);
-        const el = m.getElement();
-        const capEl = el?.querySelector(".gk-veh-cap");
-        if (capEl) capEl.style.cssText = b.cap != null ? `transform:rotate(${Number(b.cap)}deg)` : "display:none";
-        const badge = el?.querySelector(".gk-veh");
-        if (badge && badge.textContent !== String(b.ligne ?? "?")) m.setIcon(this._icon(b));
+        if (!this._applyIconState(m, b)) m.setIcon(this._icon(b));
       }
       m._gkBus = b;
       if (m.isPopupOpen()) m.setPopupContent(this._popup(b));
