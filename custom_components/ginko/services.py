@@ -11,7 +11,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from .const import DOMAIN, CONF_API_KEY
-from .coordinator import _api_get
+from .coordinator import _api_get, apply_rt
 
 SERVICE_CHERCHER_ARRET = "chercher_arret"
 SERVICE_GET_HORAIRES = "get_horaires"
@@ -129,6 +129,7 @@ async def _get_horaires(call: ServiceCall) -> ServiceResponse:
         nom_exact = q.get("nomExact") or nom_exact
         passages.extend(p for p in q.get("listeTemps", []) if isinstance(p, dict))
 
+    passages = apply_rt(hass, _api_key(hass), passages)
     passages.sort(key=lambda p: p.get("tempsEnSeconde") if p.get("tempsEnSeconde") is not None else 10**9)
     data = {"nom": nom_exact, "nb_passages": len(passages), "passages": passages}
     cache[key] = {"ts": now, "data": data}

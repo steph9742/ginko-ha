@@ -2,13 +2,16 @@
 from __future__ import annotations
 import asyncio
 import logging, math
-from datetime import timedelta
+import time
+from datetime import date, timedelta
 import aiohttp
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
-from .const import SCAN_INTERVAL_TRAM, SCAN_INTERVAL_BUS_LIEU, SCAN_INTERVAL_BUS_SUIVI
+from .const import DOMAIN, SCAN_INTERVAL_TRAM, SCAN_INTERVAL_BUS_LIEU, SCAN_INTERVAL_BUS_SUIVI
+from .gtfs import GTFS_URL, GinkoGtfs
+from .gtfs_rt import enrich_passages, parse_alerts, parse_trip_updates
 
 _LOGGER = logging.getLogger(__name__)
 BASE_URL = "https://api.ginko.voyage"
@@ -38,6 +41,17 @@ async def _api_get(hass: HomeAssistant, api_key: str, path: str, params: dict, t
         raise UpdateFailed(f"Network error: {err}") from err
 
 
+def rt_coordinator(hass: HomeAssistant, api_key: str):
+    return hass.data.get(DOMAIN, {}).get(f"_rt_{api_key}")
+
+
+def apply_rt(hass: HomeAssistant, api_key: str, passages: list) -> list:
+    rt = rt_coordinator(hass, api_key)
+    if not rt or not rt.rights or not rt.data or not isinstance(passages, list):
+        return passages
+    return enrich_passages(passages, rt.data.get("index", {}), int(time.time()), on_match=rt.learn_vehicle)
+
+
 class GinkoCoordinator(DataUpdateCoordinator):
     def __init__(self, hass, api_key, entries, scan_interval: int = 0):
         self.api_key = api_key
@@ -61,6 +75,8 @@ class GinkoCoordinator(DataUpdateCoordinator):
                     key = f"{item['nom']}|{item['id_ligne']}|{item['sens_aller']}"
                     # API returns {nomExact, listeTemps, latitude, longitude}
                     results[key] = result.get("listeTemps", []) if isinstance(result, dict) else []
+
+        results = {k: apply_rt(self.hass, self.api_key, v) for k, v in results.items()}
 
         # Auto-ajuste l'intervalle si aucun override utilisateur
         if self._manual_interval is None:
@@ -206,7 +222,7 @@ class GinkoPersonProximityCoordinator(DataUpdateCoordinator):
             result.append({
                 "nom":      nom,
                 "distance": round(float(distance)) if distance is not None else None,
-                "passages": passages,
+                "passages": apply_rt(self.hass, self.api_key, passages),
             })
 
         data = {"arrets": result, "person_state": person.state}
@@ -350,10 +366,28 @@ class GinkoSuiviLigneCoordinator(DataUpdateCoordinator):
     # ------------------------------------------------------------------
 
     async def _async_update_data(self) -> dict:
+        rt = rt_coordinator(self.hass, self.api_key)
+        if rt and rt.rights and rt.data:
+            buses = []
+            for b in rt.data.get("vehicules", []):
+                if b.get("id_ligne") != self._id_ligne:
+                    continue
+                bus = dict(b)
+                if bus.get("num_vehicule"):
+                    bus["id"] = bus["num_vehicule"]
+                buses.append(bus)
+            buses.sort(key=lambda x: x["dans_sec"])
+            return {
+                "num_ligne": self._num_ligne,
+                "buses": buses,
+                "source": "gtfs_rt",
+                "horodatage": rt.data.get("horodatage"),
+            }
+
         if not self._variantes:
             await self._load_variantes()
         if not self._variantes:
-            return {"num_ligne": self._num_ligne, "buses": []}
+            return {"num_ligne": self._num_ligne, "buses": [], "source": "rest"}
 
         # Meilleure entrée par bus : {f"{numVehicule}_{sensAller}": {...}}
         best: dict[str, dict] = {}
@@ -425,7 +459,7 @@ class GinkoSuiviLigneCoordinator(DataUpdateCoordinator):
 
         buses.sort(key=lambda x: x["dans_sec"])
         _LOGGER.debug("Ginko Suivi L%s : %d bus positionnés", self._num_ligne, len(buses))
-        return {"num_ligne": self._num_ligne, "buses": buses}
+        return {"num_ligne": self._num_ligne, "buses": buses, "source": "rest"}
 
 
 class GinkoInfoCoordinator(DataUpdateCoordinator):
@@ -447,3 +481,101 @@ class GinkoInfoCoordinator(DataUpdateCoordinator):
             self._get("/TR/getMessages.do", {}),
         )
         return {"etat_lignes": etat, "messages": messages}
+
+
+class GinkoRtCoordinator(DataUpdateCoordinator):
+    def __init__(self, hass: HomeAssistant, api_key: str) -> None:
+        self.api_key = api_key
+        self.rights: bool | None = None
+        self.gtfs = GinkoGtfs()
+        self.vehicle_map: dict[str, str] = {}
+        self._votes: dict[str, dict[str, int]] = {}
+        self._votes_day: date | None = None
+        self._alertes: list = []
+        self._alertes_at = 0
+        super().__init__(
+            hass, _LOGGER, name="Ginko GTFS-RT",
+            update_interval=timedelta(seconds=10),
+        )
+
+    async def _fetch(self, path: str) -> bytes | None:
+        session = async_get_clientsession(self.hass)
+        async with session.get(
+            f"{BASE_URL}{path}",
+            params={"apiKey": self.api_key},
+            timeout=aiohttp.ClientTimeout(total=15),
+        ) as resp:
+            if resp.status == 403:
+                return None
+            resp.raise_for_status()
+            return await resp.read()
+
+    async def _ensure_gtfs(self) -> None:
+        today = date.today()
+        if not self.gtfs.needs_reload(today):
+            return
+        session = async_get_clientsession(self.hass)
+        async with session.get(GTFS_URL, timeout=aiohttp.ClientTimeout(total=60)) as resp:
+            resp.raise_for_status()
+            raw = await resp.read()
+        await self.hass.async_add_executor_job(self.gtfs.load, raw, today)
+        _LOGGER.info("Ginko: GTFS chargé (%d courses sur 3 jours)", len(self.gtfs.trips))
+
+    def learn_vehicle(self, vid: str, num: str) -> None:
+        today = date.today()
+        if self._votes_day != today:
+            self._votes = {}
+            self._votes_day = today
+        votes = self._votes.setdefault(vid, {})
+        votes[num] = votes.get(num, 0) + 1
+        best = max(votes, key=votes.get)
+        current = self.vehicle_map.get(vid)
+        if current is None and votes[best] >= 2:
+            self.vehicle_map[vid] = best
+        elif current is not None and best != current and votes[best] >= 2 and votes[best] > votes.get(current, 0):
+            self.vehicle_map[vid] = best
+
+    def _empty(self) -> dict:
+        return {"vehicules": [], "index": {}, "alertes": [], "horodatage": None}
+
+    async def _async_update_data(self) -> dict:
+        try:
+            raw = await self._fetch("/GTFSRT/tripUpdates.do")
+        except aiohttp.ClientError as err:
+            raise UpdateFailed(f"Network error: {err}") from err
+
+        if raw is None:
+            if self.rights is not False:
+                self.rights = False
+                self.update_interval = timedelta(hours=1)
+                _LOGGER.info("Ginko: GTFS-RT non autorisé pour cette clé, l'API REST reste utilisée")
+            return self.data or self._empty()
+
+        if self.rights is not True:
+            self.rights = True
+            self.update_interval = timedelta(seconds=10)
+            _LOGGER.info("Ginko: GTFS-RT disponible pour cette clé")
+
+        try:
+            await self._ensure_gtfs()
+        except aiohttp.ClientError as err:
+            raise UpdateFailed(f"GTFS indisponible : {err}") from err
+        if not self.gtfs.loaded:
+            return self.data or self._empty()
+
+        now = int(time.time())
+        data = await self.hass.async_add_executor_job(parse_trip_updates, raw, self.gtfs, now)
+
+        if now - self._alertes_at > 60:
+            try:
+                raw_al = await self._fetch("/GTFSRT/serviceAlerts.do")
+                if raw_al:
+                    self._alertes = await self.hass.async_add_executor_job(parse_alerts, raw_al, self.gtfs)
+                self._alertes_at = now
+            except aiohttp.ClientError:
+                pass
+
+        for bus in data["vehicules"]:
+            bus["num_vehicule"] = self.vehicle_map.get(bus["id"])
+        data["alertes"] = self._alertes
+        return data

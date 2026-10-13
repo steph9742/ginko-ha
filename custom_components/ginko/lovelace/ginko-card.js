@@ -1,7 +1,7 @@
 // custom_components/ginko/lovelace/ginko-card.js
 // Ginko Besançon — Lovelace custom card
 
-const VERSION = "1.2.1";
+const VERSION = "1.3.0";
 
 // ── SVG icons ────────────────────────────────────────────────────────────────
 
@@ -17,6 +17,15 @@ const ICON_ACCESS = `<svg class="gk-icon-access" viewBox="0 0 24 24" fill="none"
 
 function _modeIcon(modeTransport) {
   return modeTransport === 1 ? ICON_TRAM : ICON_BUS;
+}
+
+function _retardBadge(p) {
+  const r = Number(p?.retard);
+  if (!Number.isFinite(r) || Math.abs(r) < 60) return "";
+  const m = Math.round(r / 60);
+  const cls = r > 0 ? "gk-retard gk-retard--late" : "gk-retard gk-retard--early";
+  const title = r > 0 ? `Retard de ${m} min` : `Avance de ${-m} min`;
+  return `<span class="${cls}" title="${title}">${r > 0 ? "+" : "−"}${Math.abs(m)}</span>`;
 }
 
 function _iconWifi(color) {
@@ -141,6 +150,9 @@ const STYLES = `
   .gk-icon-wifi { width:13px; height:13px; flex-shrink:0; }
   .gk-icon-access { width:12px; height:12px; color:var(--gk-blue); flex-shrink:0; }
   .gk-approx { font-size:11px; font-weight:700; color:var(--gk-amber); line-height:1; flex-shrink:0; }
+  .gk-retard { font-size:10px; font-weight:700; line-height:1; margin-left:3px; padding:1px 4px; border-radius:4px; align-self:center; }
+  .gk-retard--late { color:#b45309; background:rgba(245,158,11,0.18); }
+  .gk-retard--early { color:#1d4ed8; background:rgba(59,130,246,0.15); }
   /* Lines section */
   .gk-lines { padding:0 10px 10px; display:flex; flex-direction:column; gap:6px; }
   .gk-ligne { border-radius:var(--gk-r-md); overflow:hidden; border:0.5px solid var(--gk-border); }
@@ -259,11 +271,12 @@ class GinkoCard extends HTMLElement {
     for (const eid of entities) {
       const e = this._hass?.states[eid];
       for (const bus of e?.attributes?.buses ?? []) {
-        if (bus.id == null) continue;
-        const key = String(bus.id);
-        const prev = map.get(key);
-        if (!prev || (bus.dans_sec ?? Infinity) < (prev.dans_sec ?? Infinity)) {
-          map.set(key, bus);
+        for (const key of [bus.id, bus.num_vehicule]) {
+          if (key == null || key === "") continue;
+          const prev = map.get(String(key));
+          if (!prev || (bus.dans_sec ?? Infinity) < (prev.dans_sec ?? Infinity)) {
+            map.set(String(key), bus);
+          }
         }
       }
     }
@@ -327,7 +340,7 @@ class GinkoCard extends HTMLElement {
     const gpsIcon    = p.fiable === false ? `<span class="gk-approx" title="Horaire théorique">~</span>` : _iconWifi(bg);
     const accessIcon = p.accessibiliteVehicule == 1 ? ICON_ACCESS : "";
 
-    const bus = posMap.get(String(p.numVehicule ?? ""));
+    const bus = posMap.get(String(p.numVehicule ?? "")) ?? posMap.get(String(p.idVehiculeRt ?? ""));
     let posHtml = "";
     if (bus) {
       const dot = bus.statut === "a_quai" ? "#22c55e" : "#3b82f6";
@@ -342,7 +355,7 @@ class GinkoCard extends HTMLElement {
     let timeHtml;
     if (p.typeDeTemps === 0) {
       const mins = String(p.temps ?? "").replace(" min","").trim();
-      timeHtml = `<span class="gk-next-val">${_esc(mins)}</span><span class="gk-next-unit">min</span>`;
+      timeHtml = `<span class="gk-next-val">${_esc(mins)}</span><span class="gk-next-unit">min</span>${_retardBadge(p)}`;
     } else if (p.typeDeTemps === 2) {
       timeHtml = `<span class="gk-next-val--sm" style="color:#b45309;font-style:italic">${_esc(p.temps ?? "—")}</span>`;
     } else {
@@ -410,7 +423,7 @@ class GinkoCard extends HTMLElement {
     const gpsIcon    = p.fiable === false ? `<span class="gk-approx" title="Horaire théorique">~</span>` : _iconWifi(bg);
     const accessIcon = p.accessibiliteVehicule == 1 ? ICON_ACCESS : "";
 
-    const bus = posMap.get(String(p.numVehicule ?? ""));
+    const bus = posMap.get(String(p.numVehicule ?? "")) ?? posMap.get(String(p.idVehiculeRt ?? ""));
     let posDot = "";
     if (bus) {
       const aQuai    = bus.statut === "a_quai";
@@ -422,7 +435,7 @@ class GinkoCard extends HTMLElement {
     let timeHtml;
     if (p.typeDeTemps === 0) {
       const mins = String(p.temps ?? "").replace(" min","").trim();
-      timeHtml = `<span class="gk-pill-val">${_esc(mins)}</span><span class="gk-pill-unit">min</span>`;
+      timeHtml = `<span class="gk-pill-val">${_esc(mins)}</span><span class="gk-pill-unit">min</span>${_retardBadge(p)}`;
     } else if (p.typeDeTemps === 2) {
       // Texte de remplacement : Déviation, Travaux, Bus complet…
       timeHtml = `<span class="gk-pill-disruption">${_esc(p.temps ?? "—")}</span>`;

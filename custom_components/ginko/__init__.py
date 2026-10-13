@@ -22,6 +22,7 @@ from .coordinator import (
     GinkoCoordinator,
     GinkoInfoCoordinator,
     GinkoPersonProximityCoordinator,
+    GinkoRtCoordinator,
     GinkoSuiviLigneCoordinator,
 )
 from .services import async_register_services
@@ -114,6 +115,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await info_coord.async_config_entry_first_refresh()
         hass.data[DOMAIN][info_key] = info_coord
 
+    rt_key = f"_rt_{entry.data[CONF_API_KEY]}"
+    if rt_key not in hass.data[DOMAIN]:
+        rt_coord = GinkoRtCoordinator(hass, entry.data[CONF_API_KEY])
+        await rt_coord.async_refresh()
+        hass.data[DOMAIN][rt_key] = rt_coord
+
     if entry_data.get("mode") == MODE_LIGNE:
         # Pas de coordinator propre — réutilise le GinkoInfoCoordinator partagé
         hass.data[DOMAIN][entry.entry_id] = hass.data[DOMAIN][info_key]
@@ -177,9 +184,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         api_key   = entry.data[CONF_API_KEY]
         # Si on était le propriétaire des info sensors, libérer le verrou
         # pour que la prochaine entrée configurée puisse les recréer.
-        owner_key = f"_info_sensors_owner_{api_key}"
-        if hass.data[DOMAIN].get(owner_key) == entry.entry_id:
-            hass.data[DOMAIN].pop(owner_key, None)
+        for owner_key in (f"_info_sensors_owner_{api_key}", f"_rt_sensors_owner_{api_key}"):
+            if hass.data[DOMAIN].get(owner_key) == entry.entry_id:
+                hass.data[DOMAIN].pop(owner_key, None)
 
         info_key = f"_info_{api_key}"
         remaining = [
@@ -190,6 +197,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             info_coord: GinkoInfoCoordinator = hass.data[DOMAIN].pop(info_key, None)
             if info_coord:
                 await info_coord.async_shutdown()
+            rt_coord: GinkoRtCoordinator = hass.data[DOMAIN].pop(f"_rt_{api_key}", None)
+            if rt_coord:
+                await rt_coord.async_shutdown()
 
     return unloaded
 

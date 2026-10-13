@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Any
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
@@ -34,10 +35,18 @@ from .coordinator import (
     GinkoCoordinator,
     GinkoInfoCoordinator,
     GinkoPersonProximityCoordinator,
+    GinkoRtCoordinator,
     GinkoSuiviLigneCoordinator,
+    rt_coordinator,
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _iso(ts) -> str | None:
+    if not ts:
+        return None
+    return datetime.fromtimestamp(int(ts)).isoformat()
 
 
 def _color(value: str | None) -> str | None:
@@ -81,6 +90,13 @@ async def async_setup_entry(
         hass.data[DOMAIN][owner_key] = entry.entry_id
         entities.append(GinkoEtatLignesSensor(info_coordinator))
         entities.append(GinkoMessagesSensor(info_coordinator))
+
+    rt_owner_key = f"_rt_sensors_owner_{entry.data[CONF_API_KEY]}"
+    rt_coord: GinkoRtCoordinator | None = rt_coordinator(hass, entry.data[CONF_API_KEY])
+    rt_owner = hass.data[DOMAIN].get(rt_owner_key)
+    if rt_coord and rt_coord.rights and (rt_owner is None or rt_owner == entry.entry_id):
+        hass.data[DOMAIN][rt_owner_key] = entry.entry_id
+        entities.append(GinkoVehiculesSensor(rt_coord))
 
     async_add_entities(entities, True)
 
@@ -395,7 +411,11 @@ class GinkoMessagesSensor(CoordinatorEntity[GinkoInfoCoordinator], SensorEntity)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        return {"messages": self._messages()}
+        attrs = {"messages": self._messages()}
+        rt = rt_coordinator(self.hass, self.coordinator.api_key)
+        if rt and rt.rights and rt.data:
+            attrs["alertes"] = rt.data.get("alertes", [])
+        return attrs
 
     def _messages(self) -> list:
         if not self.coordinator.data:
@@ -437,4 +457,35 @@ class GinkoSuiviLigneSensor(CoordinatorEntity[GinkoSuiviLigneCoordinator], Senso
             "ginko_mode": "suivi",
             "num_ligne":  data.get("num_ligne", self._num_ligne),
             "buses":      data.get("buses", []),
+            "source":     data.get("source", "rest"),
+            "horodatage": _iso(data.get("horodatage")),
+        }
+
+
+class GinkoVehiculesSensor(CoordinatorEntity[GinkoRtCoordinator], SensorEntity):
+    _attr_unique_id = "ginko_vehicules"
+    _attr_name = "Ginko Véhicules"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = "véhicules"
+    _attr_icon = "mdi:bus-multiple"
+    _unrecorded_attributes = frozenset({MATCH_ALL})
+
+    @property
+    def available(self) -> bool:
+        return bool(self.coordinator.rights) and self.coordinator.last_update_success
+
+    @property
+    def native_value(self) -> int:
+        return len((self.coordinator.data or {}).get("vehicules", []))
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        data = self.coordinator.data or {}
+        vehicules = data.get("vehicules", [])
+        return {
+            "ginko_mode": "vehicules",
+            "vehicules": vehicules,
+            "lignes": sorted({b["ligne"] for b in vehicules}),
+            "horodatage": _iso(data.get("horodatage")),
+            "source": "gtfs_rt",
         }

@@ -16,11 +16,12 @@
    - [Mode 4 — Suivi d'une ligne](#mode-4--suivi-dune-ligne-mode_ligne)
    - [Mode 5 — Positions des bus](#mode-5--positions-des-bus-mode_suivi_ligne)
 5. [Capteurs globaux](#capteurs-globaux)
-6. [Cartes Lovelace](#cartes-lovelace)
-7. [Services](#services)
-8. [Référence des attributs des capteurs](#référence-des-attributs-des-capteurs)
-9. [Options après installation](#options-après-installation)
-10. [Dépannage](#dépannage)
+6. [Temps réel GTFS-RT (facultatif)](#temps-réel-gtfs-rt-facultatif)
+7. [Cartes Lovelace](#cartes-lovelace)
+8. [Services](#services)
+9. [Référence des attributs des capteurs](#référence-des-attributs-des-capteurs)
+10. [Options après installation](#options-après-installation)
+11. [Dépannage](#dépannage)
 
 ---
 
@@ -210,6 +211,42 @@ Ces deux capteurs sont créés **automatiquement** lors de la première configur
 | `sensor.ginko_messages` | Total des messages actifs | `messages` : liste de tous les messages |
 
 **Rafraîchissement :** toutes les 60 secondes.
+
+---
+
+## Temps réel GTFS-RT (facultatif)
+
+En plus de son API REST, Ginko publie deux flux temps réel normalisés (GTFS-RT) : les horaires estimés de toutes les courses de la journée et les perturbations structurées. Ils sont accessibles avec votre clé API habituelle, **à condition que Keolis y ajoute les droits**.
+
+### Activer les droits
+
+1. Écrivez à **ginko.support-ssi@keolis.com** en demandant l'accès aux flux GTFS-RT (`GTFSRT/tripUpdates.do` et `GTFSRT/serviceAlerts.do`) pour votre clé, en précisant votre usage (domotique personnelle).
+2. Comptez environ un jour, puis quelques heures entre la réponse et l'activation effective.
+3. Redémarrez Home Assistant : l'intégration détecte les droits toute seule (le journal affiche « GTFS-RT disponible pour cette clé »). Sans droits, rien ne change, l'API REST continue d'être utilisée.
+
+### Ce que ça apporte
+
+| Fonction | Sans GTFS-RT | Avec GTFS-RT |
+|---|---|---|
+| Positions des véhicules d'une ligne (mode 5) | Reconstruites à partir des temps d'attente de tous les arrêts de la ligne (3 à 4 requêtes toutes les 10 à 15 s) | Lues dans le flux, pour toutes les lignes à la fois, une requête toutes les 10 s |
+| Position de **tous** les véhicules du réseau | Impossible | Capteur `sensor.ginko_vehicules` |
+| Retard réel d'un passage | Inconnu | Attribut `retard` (secondes) sur chaque passage, affiché « +4 » sur les pilules des cartes |
+| Arrêts non desservis (déviations) | Texte « Non desservi » fourni par l'API | Même texte, plus le drapeau `nonDesservi` pour les automatisations |
+| Perturbations | Messages par ligne | En plus : attribut `alertes` avec effet, lignes, **arrêts concernés** et périodes de validité |
+
+Le flux fait environ 400 Ko toutes les 10 s pour tout le réseau. L'intégration télécharge aussi le GTFS (3 Mo) une fois par jour pour calculer les retards. À savoir si votre instance est sur une connexion limitée.
+
+### Capteur `sensor.ginko_vehicules`
+
+Créé automatiquement quand les droits sont présents. État : nombre de véhicules en circulation. Attributs :
+
+| Attribut | Description |
+|---|---|
+| `vehicules` | Liste des véhicules, même structure que `buses` du mode 5 (voir la référence), avec en plus `ligne`, `id_ligne`, `retard`, `progression` et `arrets_restants` |
+| `lignes` | Lignes ayant au moins un véhicule en circulation |
+| `horodatage` | Date du flux |
+
+> Le flux ne contient pas de position GPS : la position est exprimée par l'arrêt précédent, le prochain arrêt et le temps restant, comme en mode 5. L'identifiant `id` est l'identifiant interne du véhicule dans le flux ; le numéro public (`num_vehicule`, celui affiché sur le bus) est renseigné dès que l'intégration l'a appris en croisant avec l'API REST.
 
 ---
 
@@ -406,6 +443,8 @@ passages = resp["passages"]
 | `typeDeTemps` | int | 0 = temps relatif, 1 = heure absolue, 2 = texte de remplacement |
 | `deviation` | bool | `true` si le passage est remplacé par un texte (« Déviation », « Travaux », « Bus complet »…) |
 
+Avec les droits GTFS-RT, chaque objet de `passages` peut porter en plus `retard` (secondes, positif = retard), `nonDesservi` (`true` si l'arrêt est sauté) et `idVehiculeRt` (identifiant interne du véhicule dans le flux).
+
 ### Mode Personne (`sensor.ginko_proximite_<person_name>`)
 
 | Attribut | Type | Description |
@@ -465,6 +504,10 @@ passages = resp["passages"]
 | `arret_precedent` | string ou `null` | Arrêt précédent (`null` en départ de terminus) |
 | `statut` | string | `"a_quai"`, `"depart"` ou `"en_route"` |
 | `dans_sec` | int | Secondes avant le prochain arrêt |
+| `retard` | int ou absent | Retard en secondes au prochain arrêt (GTFS-RT uniquement) |
+| `num_vehicule` | string ou `null` | Numéro public du véhicule (GTFS-RT, dès qu'il est connu) |
+
+Le capteur porte aussi `source` (`rest` ou `gtfs_rt`) et `horodatage`.
 
 ### Capteurs globaux
 
@@ -479,6 +522,7 @@ passages = resp["passages"]
 | Attribut | Type | Description |
 |---|---|---|
 | `messages` | liste | Tous les messages de perturbation actifs |
+| `alertes` | liste | GTFS-RT uniquement : `{titre, texte, effet, cause, lignes, arrets, periodes}` |
 
 ---
 
