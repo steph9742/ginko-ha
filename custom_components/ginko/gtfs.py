@@ -64,15 +64,18 @@ class GinkoGtfs:
             }
             for r in rows("routes.txt")
         }
-        stops = {
-            r["stop_id"]: {
+        stops = {}
+        for r in rows("stops.txt"):
+            try:
+                lat, lon = float(r.get("stop_lat") or ""), float(r.get("stop_lon") or "")
+            except ValueError:
+                lat = lon = None
+            stops[r["stop_id"]] = {
                 "nom": r.get("stop_name", ""),
                 "parent": r.get("parent_station") or None,
-                "lat": r.get("stop_lat"),
-                "lon": r.get("stop_lon"),
+                "lat": lat,
+                "lon": lon,
             }
-            for r in rows("stops.txt")
-        }
         trips = {
             r["trip_id"]: {
                 "route_id": r["route_id"],

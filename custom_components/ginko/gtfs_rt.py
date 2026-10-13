@@ -1,6 +1,7 @@
 # custom_components/ginko/gtfs_rt.py
 from __future__ import annotations
 
+import math
 from datetime import datetime
 
 from google.transit import gtfs_realtime_pb2 as rt
@@ -10,6 +11,32 @@ from .gtfs import GinkoGtfs
 SKIPPED = rt.TripUpdate.StopTimeUpdate.SKIPPED
 A_QUAI_SEC = 30
 DEPART_SEC = 120
+
+
+def _bearing(a: dict, b: dict) -> int | None:
+    if None in (a.get("lat"), a.get("lon"), b.get("lat"), b.get("lon")):
+        return None
+    la1, la2 = math.radians(a["lat"]), math.radians(b["lat"])
+    dlon = math.radians(b["lon"] - a["lon"])
+    x = math.sin(dlon) * math.cos(la2)
+    y = math.cos(la1) * math.sin(la2) - math.sin(la1) * math.cos(la2) * math.cos(dlon)
+    return int(math.degrees(math.atan2(x, y)) % 360)
+
+
+def _position(gtfs: GinkoGtfs, theo: dict, prev_seq: int, first_seq: int, midnight: int, est_first, retard, now: int, started: bool) -> dict:
+    nxt = gtfs.stops.get(theo[first_seq][0], {}) if first_seq in theo else {}
+    prv = gtfs.stops.get(theo[prev_seq][0], {}) if prev_seq in theo else {}
+    out = {"lat": nxt.get("lat"), "lon": nxt.get("lon"), "cap": None, "progression_segment": 1.0}
+    if not started or not prv or prv.get("lat") is None or nxt.get("lat") is None or est_first is None:
+        return out
+    prev_est = midnight + theo[prev_seq][1] + (retard or 0)
+    span = est_first - prev_est
+    frac = 1.0 if span <= 0 else max(0.0, min(1.0, (now - prev_est) / span))
+    out["lat"] = round(prv["lat"] + (nxt["lat"] - prv["lat"]) * frac, 6)
+    out["lon"] = round(prv["lon"] + (nxt["lon"] - prv["lon"]) * frac, 6)
+    out["cap"] = _bearing(prv, nxt)
+    out["progression_segment"] = round(frac, 2)
+    return out
 
 
 def _event(stu):
@@ -71,6 +98,10 @@ def parse_trip_updates(raw: bytes, gtfs: GinkoGtfs, now: int) -> dict:
             "num_vehicule": None,
             "ligne": route.get("num", route_id),
             "id_ligne": route_id,
+            "couleurFond": route.get("couleurFond"),
+            "couleurTexte": route.get("couleurTexte"),
+            "mode": "tram" if route.get("type") == "0" else "bus",
+            **_position(gtfs, theo, prev_seq, first_seq, midnight, est_first, retard_first, now, started),
             "sens": "aller" if aller else "retour",
             "terminus": trip["headsign"],
             "prochain_arret": gtfs.stop_name(theo[first_seq][0]) if first_seq in theo else None,

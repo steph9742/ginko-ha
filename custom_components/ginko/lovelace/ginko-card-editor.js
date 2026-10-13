@@ -625,3 +625,153 @@ class GinkoRechercheCardEditor extends HTMLElement {
 }
 
 customElements.define("ginko-recherche-card-editor", GinkoRechercheCardEditor);
+
+// ── GinkoVehiculesCardEditor ──────────────────────────────────────────────────
+
+class GinkoVehiculesCardEditor extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this._config = {};
+    this._hass   = null;
+  }
+
+  setConfig(config) { this._config = { ...config }; this._render(); }
+
+  set hass(h) {
+    if (!this._hass) {
+      this._hass = h;
+      this._autoFill();
+      this._render();
+    } else {
+      this._hass = h;
+    }
+  }
+
+  _autoFill() {
+    if (!this._hass) return;
+    const upd = { ...this._config };
+    let changed = false;
+    if (!upd.entity && this._hass.states["sensor.ginko_vehicules"]) { upd.entity = "sensor.ginko_vehicules"; changed = true; }
+    if (!upd.messages_entity && this._hass.states["sensor.ginko_messages"]) { upd.messages_entity = "sensor.ginko_messages"; changed = true; }
+    if (changed) {
+      this._config = upd;
+      this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: upd }, bubbles: true, composed: true }));
+    }
+  }
+
+  _render() {
+    const cfg = this._config;
+    const centre = Array.isArray(cfg.centre) && cfg.centre.length === 2 ? cfg.centre.join(", ") : "";
+    const lignes = Array.isArray(cfg.lignes) ? cfg.lignes.join(", ") : "";
+    const persons = this._hass ? Object.keys(this._hass.states).filter(id => id.startsWith("person.")).sort() : [];
+    this.shadowRoot.innerHTML = `<style>${EDITOR_STYLES}</style>
+    <div class="gk-editor">
+
+      <div class="gk-field">
+        <label>Entité véhicules</label>
+        <input id="entity" type="text" value="${this._esc(cfg.entity ?? "sensor.ginko_vehicules")}" placeholder="sensor.ginko_vehicules">
+        <div class="gk-hint">Créée par l'intégration quand la clé API a les droits GTFS-RT.</div>
+      </div>
+
+      <div class="gk-field">
+        <label>Hauteur de la carte (px)</label>
+        <input id="hauteur" type="number" min="200" max="900" step="20" value="${Number(cfg.hauteur ?? 360)}">
+      </div>
+
+      <div class="gk-field">
+        <label>Zoom initial</label>
+        <input id="zoom" type="number" min="10" max="18" value="${Number(cfg.zoom ?? 13)}">
+      </div>
+
+      <div class="gk-field">
+        <label>Centre <span style="font-weight:400;text-transform:none">(latitude, longitude)</span></label>
+        <input id="centre" type="text" value="${this._esc(centre)}" placeholder="47.2378, 6.0241">
+        <div class="gk-hint">Laissez vide pour le centre de Besançon.</div>
+      </div>
+
+      <div class="gk-field">
+        <label>Lignes affichées <span style="font-weight:400;text-transform:none">(optionnel)</span></label>
+        <input id="lignes" type="text" value="${this._esc(lignes)}" placeholder="L3, T1, 7">
+        <div class="gk-hint">Vide = toutes les lignes. Les filtres de la carte restent disponibles dans cette liste.</div>
+      </div>
+
+      <div class="gk-field">
+        <label>Arrêt prédéfini <span style="font-weight:400;text-transform:none">(optionnel)</span></label>
+        <input id="arret" type="text" value="${this._esc(cfg.arret ?? "")}" placeholder="ex. Gare Viotte">
+      </div>
+
+      <div class="gk-field">
+        <label>Entité personne <span style="font-weight:400;text-transform:none">(optionnel)</span></label>
+        <select id="person_entity">
+          <option value="">Aucune</option>
+          ${persons.map(id => `<option value="${this._esc(id)}" ${cfg.person_entity === id ? "selected" : ""}>${this._esc(id)}</option>`).join("")}
+        </select>
+        <div class="gk-hint">Affiche la position de la personne sur la carte.</div>
+      </div>
+
+      <div class="gk-field">
+        <label>Entité messages infotrafic <span style="font-weight:400;text-transform:none">(optionnel)</span></label>
+        <input id="messages_entity" type="text" value="${this._esc(cfg.messages_entity ?? "")}" placeholder="sensor.ginko_messages">
+      </div>
+
+      <div class="gk-field">
+        <label>Fond de carte <span style="font-weight:400;text-transform:none">(URL de tuiles, optionnel)</span></label>
+        <input id="tuiles" type="text" value="${this._esc(cfg.tuiles ?? "")}" placeholder="https://tile.openstreetmap.org/{z}/{x}/{y}.png">
+        <div class="gk-hint">Vide = OpenStreetMap. Le mode sombre est obtenu par un filtre, quel que soit le fond.</div>
+      </div>
+
+      <div class="gk-section">Aperçu YAML</div>
+      <pre>${this._yaml()}</pre>
+    </div>`;
+
+    const emit = (cfg) => {
+      this._config = cfg;
+      this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: cfg }, bubbles: true, composed: true }));
+      const pre = this.shadowRoot.querySelector("pre");
+      if (pre) pre.textContent = this._yaml();
+    };
+    const bind = (id, key, parse) => {
+      const el = this.shadowRoot.querySelector(`#${id}`);
+      if (!el) return;
+      el.addEventListener("change", e => {
+        const cfg = { ...this._config };
+        const v = parse ? parse(e.target.value) : e.target.value;
+        if (v === "" || v == null || (Array.isArray(v) && !v.length)) delete cfg[key]; else cfg[key] = v;
+        emit(cfg);
+      });
+    };
+    bind("entity", "entity");
+    bind("hauteur", "hauteur", v => Number(v));
+    bind("zoom", "zoom", v => Number(v));
+    bind("centre", "centre", v => {
+      const parts = v.split(",").map(x => Number(x.trim())).filter(x => Number.isFinite(x));
+      return parts.length === 2 ? parts : null;
+    });
+    bind("lignes", "lignes", v => v.split(",").map(x => x.trim()).filter(Boolean));
+    bind("arret", "arret");
+    bind("person_entity", "person_entity");
+    bind("messages_entity", "messages_entity");
+    bind("tuiles", "tuiles");
+  }
+
+  _yaml() {
+    const c = this._config;
+    return [
+      `type: custom:ginko-vehicules-card`,
+      `entity: ${c.entity ?? "sensor.ginko_vehicules"}`,
+      c.hauteur != null ? `hauteur: ${c.hauteur}` : null,
+      c.zoom != null ? `zoom: ${c.zoom}` : null,
+      Array.isArray(c.centre) ? `centre: [${c.centre.join(", ")}]` : null,
+      Array.isArray(c.lignes) && c.lignes.length ? `lignes: [${c.lignes.join(", ")}]` : null,
+      c.arret ? `arret: ${c.arret}` : null,
+      c.person_entity ? `person_entity: ${c.person_entity}` : null,
+      c.messages_entity ? `messages_entity: ${c.messages_entity}` : null,
+      c.tuiles ? `tuiles: ${c.tuiles}` : null,
+    ].filter(Boolean).join("\n");
+  }
+
+  _esc(s) { return String(s).replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+}
+
+customElements.define("ginko-vehicules-card-editor", GinkoVehiculesCardEditor);

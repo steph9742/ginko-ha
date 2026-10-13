@@ -1,7 +1,7 @@
 // custom_components/ginko/lovelace/ginko-card.js
 // Ginko Besançon — Lovelace custom card
 
-const VERSION = "1.3.0";
+const VERSION = "1.4.0";
 
 // ── SVG icons ────────────────────────────────────────────────────────────────
 
@@ -1313,12 +1313,441 @@ class GinkoSuiviCard extends HTMLElement {
 
 // ── Registration ──────────────────────────────────────────────────────────────
 
+// ── Véhicules card ────────────────────────────────────────────────────────────
+
+const LEAFLET_VERSION = "1.9.4";
+const LEAFLET_JS  = `https://unpkg.com/leaflet@${LEAFLET_VERSION}/dist/leaflet-src.esm.js`;
+const LEAFLET_CSS = `https://unpkg.com/leaflet@${LEAFLET_VERSION}/dist/leaflet.css`;
+let _leafletPromise = null;
+function _loadLeaflet() {
+  if (!_leafletPromise) _leafletPromise = import(LEAFLET_JS);
+  return _leafletPromise;
+}
+const _naturalCompare = (a, b) => String(a).localeCompare(String(b), "fr", { numeric: true });
+const TUILES_OSM = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+
+const VEHICULES_STYLES = `
+  .gk-veh-count { font-size:11px; color:var(--gk-txt-2); white-space:nowrap; }
+  .gk-map { width:100%; background:var(--gk-row-bg); position:relative; z-index:0; }
+  .gk-map.dark .leaflet-tile-pane { filter:invert(1) hue-rotate(180deg) brightness(0.75) contrast(1.15) saturate(0.6); }
+  .gk-map.dark .leaflet-control-attribution { background:rgba(0,0,0,0.6); color:#aaa; }
+  .gk-map-msg { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:12px; color:var(--gk-txt-3); pointer-events:none; }
+  .gk-veh-wrap { background:none; border:none; }
+  .gk-veh { position:relative; width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; font-family:var(--paper-font-body1_-_font-family, system-ui, sans-serif); box-shadow:0 1px 4px rgba(0,0,0,0.35), 0 0 0 2px rgba(255,255,255,0.85); letter-spacing:-0.02em; cursor:pointer; }
+  .gk-veh.tram { border-radius:8px; }
+  .gk-veh.dim { opacity:0.25; }
+  .gk-veh-cap { position:absolute; left:50%; top:50%; width:0; height:0; margin:-15px 0 0 -6px; border-left:6px solid transparent; border-right:6px solid transparent; border-bottom:9px solid currentColor; transform-origin:6px 15px; filter:drop-shadow(0 0 1px rgba(0,0,0,0.6)); }
+  .gk-stop-pin { width:14px; height:14px; border-radius:50%; background:#fff; border:3px solid #111; box-shadow:0 0 0 2px #fff, 0 1px 4px rgba(0,0,0,0.4); }
+  .gk-person-pin { width:14px; height:14px; border-radius:50%; background:#3b82f6; border:2px solid #fff; box-shadow:0 0 0 4px rgba(59,130,246,0.25); }
+  .leaflet-marker-icon.gk-veh-wrap { transition:transform 0.9s linear; }
+  .leaflet-zoom-anim .leaflet-marker-icon.gk-veh-wrap { transition:none; }
+  .leaflet-popup-content { font-family:var(--paper-font-body1_-_font-family, system-ui, sans-serif); font-size:12px; line-height:1.4; margin:8px 10px; }
+  .leaflet-popup-content b { font-size:13px; }
+  .gk-popup-badge { display:inline-block; font-size:11px; font-weight:700; padding:1px 6px; border-radius:4px; margin-right:4px; }
+  .gk-popup-retard { color:#b45309; font-weight:600; }
+  .gk-popup-avance { color:#1d4ed8; font-weight:600; }
+  .gk-filters { padding:7px 10px; display:flex; flex-wrap:wrap; gap:5px; border-bottom:0.5px solid var(--gk-border); }
+  .gk-chip { font-size:11px; font-weight:500; padding:3px 9px; border-radius:99px; border:0.5px solid var(--gk-border); background:transparent; color:var(--gk-txt-2); cursor:pointer; white-space:nowrap; font-family:inherit; display:inline-flex; align-items:center; gap:5px; }
+  .gk-chip.active { color:var(--gk-txt); background:var(--secondary-background-color,rgba(128,128,128,0.12)); border-color:var(--gk-txt-3); font-weight:600; }
+  .gk-chip-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+`;
+
+class GinkoVehiculesCard extends GinkoRechercheCard {
+  static getConfigElement() { return document.createElement("ginko-vehicules-card-editor"); }
+  static getStubConfig() {
+    return { entity: "sensor.ginko_vehicules", hauteur: 360, zoom: 13 };
+  }
+
+  constructor() {
+    super();
+    this._L = null;
+    this._map = null;
+    this._tiles = null;
+    this._dark = null;
+    this._markers = new Map();
+    this._stopMarker = null;
+    this._personMarker = null;
+    this._active = null;
+    this._suggCoords = new Map();
+    this._arretCoords = null;
+    this._lastStamp = null;
+  }
+
+  setConfig(config) {
+    const num = (v, d, lo, hi) => Math.min(hi, Math.max(lo, Number(v ?? d) || d));
+    const centre = Array.isArray(config.centre) && config.centre.length === 2
+      ? config.centre.map(Number) : [47.2378, 6.0241];
+    this._config = {
+      entity:          config.entity ?? "sensor.ginko_vehicules",
+      messages_entity: config.messages_entity ?? "",
+      person_entity:   config.person_entity ?? "",
+      hauteur:         num(config.hauteur, 360, 200, 900),
+      zoom:            num(config.zoom, 13, 10, 18),
+      centre,
+      lignes:          Array.isArray(config.lignes) ? config.lignes.map(String) : [],
+      arret:           config.arret ?? "",
+      placeholder:     config.placeholder ?? "Voir les passages à un arrêt…",
+      remember:        config.remember ?? true,
+      tuiles:          typeof config.tuiles === "string" && config.tuiles.includes("{z}") ? config.tuiles : TUILES_OSM,
+      attribution:     config.attribution ?? "© OpenStreetMap contributors",
+      nb_passages:     num(config.nb_passages, 3, 1, 5),
+      refresh:         num(config.refresh, 30, 10, 300),
+      show_traffic:    config.show_traffic ?? "if_disrupted",
+      suivi_entities:  [],
+      lignes_filtre:   [],
+      max_passages:    5,
+    };
+    try {
+      const saved = this._config.remember ? localStorage.getItem(this._filterKey()) : null;
+      this._active = saved ? new Set(JSON.parse(saved)) : null;
+    } catch (e) { this._active = null; }
+    this._shellBuilt = false;
+    this._restartTimer();
+    if (this._hass) this._render();
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    if (this._map) { this._map.remove(); this._map = null; }
+    this._markers.clear();
+    this._stopMarker = null;
+    this._personMarker = null;
+    this._shellBuilt = false;
+  }
+
+  getCardSize() { return Math.ceil(this._config?.hauteur / 50) + 3; }
+  _storageKey() { return "ginko-vehicules-last"; }
+  _filterKey()  { return "ginko-vehicules-lignes"; }
+
+  _vehicules() {
+    const e = this._hass?.states[this._config.entity];
+    const list = e?.attributes?.vehicules;
+    return Array.isArray(list) ? list : [];
+  }
+
+  _posMap() {
+    const map = new Map();
+    for (const bus of this._vehicules()) {
+      for (const key of [bus.id, bus.num_vehicule]) {
+        if (key == null || key === "") continue;
+        map.set(String(key), bus);
+      }
+    }
+    return map;
+  }
+
+  _render() {
+    if (!this._config || !this._hass) return;
+    super._render();
+    this._renderChips();
+    this._updateMap();
+  }
+
+  _buildShell() {
+    const isDark = this._hass?.themes?.darkMode ?? false;
+    const darkBg = isDark ? `<style>.gk-card{background:#0f1729!important}</style>` : "";
+    this.shadowRoot.innerHTML = `<link rel="stylesheet" href="${LEAFLET_CSS}">
+    <style>${STYLES}${RECHERCHE_STYLES}${VEHICULES_STYLES}</style>${darkBg}
+    <div class="gk-card">
+      <div class="gk-header">
+        ${ICON_BUS}
+        <span class="gk-header-title">Véhicules Ginko</span>
+        <span class="gk-veh-count"></span>
+        <span class="gk-header-upd"></span>
+      </div>
+      <div class="gk-filters"></div>
+      <div class="gk-map" style="height:${this._config.hauteur}px"><div class="gk-map-msg">Chargement de la carte…</div></div>
+      <div class="gk-search-hd">
+        ${ICON_SEARCH}
+        <input class="gk-search-in" type="text" autocomplete="off" spellcheck="false"
+               placeholder="${_esc(this._config.placeholder)}" value="${_esc(this._arret)}">
+        <button class="gk-search-clear${this._arret ? " on" : ""}" title="Effacer">${ICON_CLEAR}</button>
+      </div>
+      <div class="gk-sugg"></div>
+      <div class="gk-results"></div>
+    </div>`;
+    this._shellBuilt = true;
+    this._bindSearch();
+    this.shadowRoot.querySelector(".gk-filters").addEventListener("click", e => {
+      const chip = e.target.closest(".gk-chip");
+      if (!chip) return;
+      const k = chip.dataset.ligne;
+      if (k === "*") this._active = null;
+      else {
+        const all = this._lignesDisponibles();
+        const set = this._active ? new Set(this._active) : new Set(all);
+        if (set.has(k)) set.delete(k); else set.add(k);
+        this._active = set.size === all.length ? null : set;
+      }
+      try {
+        if (this._config.remember) {
+          if (this._active) localStorage.setItem(this._filterKey(), JSON.stringify([...this._active]));
+          else localStorage.removeItem(this._filterKey());
+        }
+      } catch (err) {}
+      this._renderChips();
+      this._updateMap(true);
+    });
+    this._initMap();
+  }
+
+  _bindSearch() {
+    const input = this.shadowRoot.querySelector(".gk-search-in");
+    const clear = this.shadowRoot.querySelector(".gk-search-clear");
+    const sugg  = this.shadowRoot.querySelector(".gk-sugg");
+    input.addEventListener("input", () => {
+      clear.classList.toggle("on", input.value.length > 0);
+      clearTimeout(this._debounce);
+      const q = input.value.trim();
+      if (q.length < 2) { this._sugg = []; this._renderSugg(); return; }
+      this._debounce = setTimeout(() => this._search(q), 300);
+    });
+    input.addEventListener("keydown", e => {
+      if (e.key === "ArrowDown") { e.preventDefault(); this._hl = Math.min(this._sugg.length - 1, this._hl + 1); this._renderSugg(); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); this._hl = Math.max(-1, this._hl - 1); this._renderSugg(); }
+      else if (e.key === "Enter") {
+        e.preventDefault();
+        const pick = this._sugg[this._hl >= 0 ? this._hl : 0];
+        if (pick) this._select(pick.nom);
+        else if (input.value.trim()) this._select(input.value.trim());
+      }
+      else if (e.key === "Escape") { this._sugg = []; this._renderSugg(); }
+    });
+    input.addEventListener("focus", () => { if (this._sugg.length) sugg.classList.add("on"); });
+    clear.addEventListener("click", () => {
+      input.value = ""; clear.classList.remove("on");
+      this._sugg = []; this._renderSugg();
+      this._arret = ""; this._data = null; this._error = ""; this._loadedAt = null; this._arretCoords = null;
+      try { if (this._config.remember) localStorage.removeItem(this._storageKey()); } catch (e) {}
+      this._renderResults();
+      this._updateMap(true);
+      input.focus();
+    });
+    sugg.addEventListener("click", e => {
+      const row = e.target.closest(".gk-sugg-row");
+      if (row?.dataset.nom) this._select(row.dataset.nom);
+    });
+  }
+
+  _renderSugg() {
+    for (const a of this._sugg) {
+      if (a?.nom && a.latitude != null && a.longitude != null) {
+        this._suggCoords.set(a.nom, [Number(a.latitude), Number(a.longitude)]);
+      }
+    }
+    super._renderSugg();
+  }
+
+  _select(nom, persist = true) {
+    this._arretCoords = this._suggCoords.get(nom) ?? null;
+    super._select(nom, persist);
+    if (!this._arretCoords) this._resolveCoords(nom);
+    else this._updateMap(true);
+  }
+
+  async _resolveCoords(nom) {
+    try {
+      const resp = await this._callService("chercher_arret", { recherche: nom, limite: 5 });
+      const hit = (resp?.arrets ?? []).find(a => a.nom?.toLowerCase() === nom.toLowerCase()) ?? resp?.arrets?.[0];
+      if (hit && this._arret === nom && hit.latitude != null) {
+        this._arretCoords = [Number(hit.latitude), Number(hit.longitude)];
+        this._suggCoords.set(nom, this._arretCoords);
+        this._updateMap(true);
+      }
+    } catch (err) {}
+  }
+
+  _renderResults() {
+    super._renderResults();
+    this._updateMap(true);
+  }
+
+  _lignesDisponibles() {
+    const present = new Set(this._vehicules().map(b => String(b.ligne ?? "")));
+    const restrict = this._config.lignes;
+    const all = [...present].filter(l => l && (!restrict.length || restrict.includes(l)));
+    return all.sort(_naturalCompare);
+  }
+
+  _lignesArret() {
+    const ps = Array.isArray(this._data?.passages) ? this._data.passages : [];
+    const set = new Set(ps.map(p => String(p.numLignePublic ?? p.idLigne ?? "")).filter(Boolean));
+    return set.size ? set : null;
+  }
+
+  _visible() {
+    const all = this._lignesDisponibles();
+    const restrict = new Set(all);
+    const arret = this._arret ? this._lignesArret() : null;
+    return this._vehicules().filter(b => {
+      const l = String(b.ligne ?? "");
+      if (!restrict.has(l)) return false;
+      if (this._active && !this._active.has(l)) return false;
+      if (arret && !arret.has(l)) return false;
+      return b.lat != null && b.lon != null;
+    });
+  }
+
+  _renderChips() {
+    const box = this.shadowRoot.querySelector(".gk-filters");
+    if (!box) return;
+    const lignes = this._lignesDisponibles();
+    const colors = new Map(this._vehicules().map(b => [String(b.ligne ?? ""), _color(b.couleurFond ?? "888")]));
+    const chips = [`<button class="gk-chip${this._active ? "" : " active"}" data-ligne="*">Toutes (${lignes.length})</button>`];
+    for (const l of lignes) {
+      const on = !this._active || this._active.has(l);
+      chips.push(`<button class="gk-chip${on ? " active" : ""}" data-ligne="${_esc(l)}"><span class="gk-chip-dot" style="background:${colors.get(l) ?? "#888"}"></span>${_esc(l)}</button>`);
+    }
+    box.innerHTML = chips.join("");
+    const e = this._hass?.states[this._config.entity];
+    const count = this.shadowRoot.querySelector(".gk-veh-count");
+    const upd = this.shadowRoot.querySelector(".gk-header-upd");
+    if (count) {
+      const n = this._visible().length, total = this._vehicules().length;
+      count.textContent = e ? (n === total ? `${total} en circulation` : `${n} / ${total} en circulation`) : "entité introuvable";
+    }
+    if (upd) upd.textContent = e?.attributes?.horodatage ? `màj ${_timeSince(e.attributes.horodatage)}` : "";
+  }
+
+  async _initMap() {
+    let L;
+    try {
+      L = await _loadLeaflet();
+    } catch (err) {
+      const msg = this.shadowRoot.querySelector(".gk-map-msg");
+      if (msg) msg.textContent = "Impossible de charger la carte (accès à unpkg.com requis).";
+      return;
+    }
+    const el = this.shadowRoot.querySelector(".gk-map");
+    if (!el || this._map) return;
+    this._L = L;
+    this._map = L.map(el, { zoomControl: true, attributionControl: true, preferCanvas: false })
+      .setView(this._config.centre, this._config.zoom);
+    this._map.attributionControl.setPrefix("");
+    this._applyTiles();
+    const msg = this.shadowRoot.querySelector(".gk-map-msg");
+    if (msg) msg.remove();
+    const link = this.shadowRoot.querySelector('link[rel="stylesheet"]');
+    const fix = () => this._map && this._map.invalidateSize();
+    if (link) link.addEventListener("load", fix);
+    setTimeout(fix, 200); setTimeout(fix, 1200);
+    this._updateMap(true);
+  }
+
+  _applyTiles() {
+    const dark = this._hass?.themes?.darkMode ?? false;
+    const el = this.shadowRoot.querySelector(".gk-map");
+    if (el) el.classList.toggle("dark", dark);
+    if (this._tiles) return;
+    this._tiles = this._L.tileLayer(this._config.tuiles, {
+      attribution: this._config.attribution, maxZoom: 19,
+    }).addTo(this._map);
+  }
+
+  _icon(b) {
+    const bg = _color(b.couleurFond ?? "888"), fg = _color(b.couleurTexte ?? "fff");
+    const cap = b.cap != null ? `transform:rotate(${Number(b.cap)}deg)` : "display:none";
+    return this._L.divIcon({
+      className: "gk-veh-wrap",
+      html: `<div class="gk-veh${b.mode === "tram" ? " tram" : ""}" style="background:${bg};color:${fg}"><span class="gk-veh-cap" style="${cap}"></span>${_esc(String(b.ligne ?? "?"))}</div>`,
+      iconSize: [30, 30], iconAnchor: [15, 15], popupAnchor: [0, -16],
+    });
+  }
+
+  _popup(b) {
+    const bg = _color(b.couleurFond ?? "888"), fg = _color(b.couleurTexte ?? "fff");
+    const pos = b.statut === "a_quai"
+      ? `À quai : ${_esc(b.prochain_arret ?? "")}`
+      : b.statut === "depart"
+        ? `Au départ de ${_esc(b.prochain_arret ?? "")}`
+        : `${_esc(b.arret_precedent ?? "")} → ${_esc(b.prochain_arret ?? "")}`;
+    const r = Number(b.retard);
+    const retard = Number.isFinite(r) && Math.abs(r) >= 60
+      ? (r > 0 ? `<div class="gk-popup-retard">Retard ${Math.round(r / 60)} min</div>` : `<div class="gk-popup-avance">Avance ${Math.round(-r / 60)} min</div>`)
+      : "";
+    const dans = b.dans_sec != null && b.statut !== "a_quai" ? `<div>Prochain arrêt dans ${Math.max(1, Math.round(b.dans_sec / 60))} min</div>` : "";
+    const num = b.num_vehicule ?? b.id;
+    return `<span class="gk-popup-badge" style="background:${bg};color:${fg}">${_esc(String(b.ligne ?? "?"))}</span><b>→ ${_esc(b.terminus ?? "")}</b>
+      <div>${pos}</div>${dans}${retard}
+      <div style="color:#888;font-size:10px;margin-top:3px">${b.mode === "tram" ? "Tram" : "Bus"} n° ${_esc(String(num ?? "?"))}</div>`;
+  }
+
+  _updateMap(force = false) {
+    if (!this._map || !this._L) return;
+    this._applyTiles();
+    const e = this._hass?.states[this._config.entity];
+    const stamp = `${e?.attributes?.horodatage ?? ""}|${this._active ? [...this._active].join(",") : "*"}|${this._arret}|${this._data?.nb_passages ?? ""}`;
+    if (!force && stamp === this._lastStamp) return;
+    this._lastStamp = stamp;
+    const L = this._L;
+    const seen = new Set();
+    for (const b of this._visible()) {
+      const key = String(b.id);
+      seen.add(key);
+      let m = this._markers.get(key);
+      const ll = [Number(b.lat), Number(b.lon)];
+      if (!m) {
+        m = L.marker(ll, { icon: this._icon(b), title: `${b.ligne} → ${b.terminus ?? ""}` }).addTo(this._map);
+        m.bindPopup(() => this._popup(m._gkBus), { closeButton: false, maxWidth: 240 });
+        this._markers.set(key, m);
+      } else {
+        m.setLatLng(ll);
+        const el = m.getElement();
+        const capEl = el?.querySelector(".gk-veh-cap");
+        if (capEl) capEl.style.cssText = b.cap != null ? `transform:rotate(${Number(b.cap)}deg)` : "display:none";
+        const badge = el?.querySelector(".gk-veh");
+        if (badge && badge.textContent !== String(b.ligne ?? "?")) m.setIcon(this._icon(b));
+      }
+      m._gkBus = b;
+      if (m.isPopupOpen()) m.setPopupContent(this._popup(b));
+    }
+    for (const [key, m] of this._markers) {
+      if (!seen.has(key)) { this._map.removeLayer(m); this._markers.delete(key); }
+    }
+    if (this._arret && this._arretCoords) {
+      if (!this._stopMarker) {
+        this._stopMarker = L.marker(this._arretCoords, {
+          icon: L.divIcon({ className: "gk-veh-wrap", html: `<div class="gk-stop-pin"></div>`, iconSize: [14, 14], iconAnchor: [7, 7] }),
+          zIndexOffset: 500, title: this._arret,
+        }).addTo(this._map);
+        this._map.panTo(this._arretCoords);
+      } else {
+        this._stopMarker.setLatLng(this._arretCoords);
+      }
+    } else if (this._stopMarker) {
+      this._map.removeLayer(this._stopMarker); this._stopMarker = null;
+    }
+    const person = this._config.person_entity ? this._hass.states[this._config.person_entity] : null;
+    const plat = person?.attributes?.latitude, plon = person?.attributes?.longitude;
+    if (plat != null && plon != null) {
+      if (!this._personMarker) {
+        this._personMarker = L.marker([plat, plon], {
+          icon: L.divIcon({ className: "gk-veh-wrap", html: `<div class="gk-person-pin"></div>`, iconSize: [14, 14], iconAnchor: [7, 7] }),
+          zIndexOffset: 400, title: person.attributes.friendly_name ?? person.entity_id,
+        }).addTo(this._map);
+      } else {
+        this._personMarker.setLatLng([plat, plon]);
+      }
+    } else if (this._personMarker) {
+      this._map.removeLayer(this._personMarker); this._personMarker = null;
+    }
+    this._renderChips();
+  }
+}
+
 customElements.define("ginko-card", GinkoCard);
 customElements.define("ginko-etat-card", GinkoEtatCard);
 customElements.define("ginko-suivi-card", GinkoSuiviCard);
 customElements.define("ginko-recherche-card", GinkoRechercheCard);
+customElements.define("ginko-vehicules-card", GinkoVehiculesCard);
 
 window.customCards = window.customCards ?? [];
+window.customCards.push({
+  type:        "ginko-vehicules-card",
+  name:        "Ginko Véhicules",
+  description: "Carte des bus et trams Ginko en circulation (GTFS-RT), filtrable par ligne, avec les passages d'un arrêt.",
+  preview:     false,
+});
 window.customCards.push({
   type:        "ginko-recherche-card",
   name:        "Ginko Recherche d'arrêt",

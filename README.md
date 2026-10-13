@@ -244,6 +244,7 @@ Créé automatiquement quand les droits sont présents. État : nombre de véhic
 |---|---|
 | `vehicules` | Liste des véhicules, même structure que `buses` du mode 5 (voir la référence), avec en plus `ligne`, `id_ligne`, `retard`, `progression` et `arrets_restants` |
 | `lignes` | Lignes ayant au moins un véhicule en circulation |
+| *(par véhicule)* | `lat`, `lon` (position estimée), `cap` (degrés), `progression_segment` (0 à 1 entre les deux arrêts), `mode` (`bus` ou `tram`), `couleurFond`, `couleurTexte` |
 | `horodatage` | Date du flux |
 
 > Le flux ne contient pas de position GPS : la position est exprimée par l'arrêt précédent, le prochain arrêt et le temps restant, comme en mode 5. L'identifiant `id` est l'identifiant interne du véhicule dans le flux ; le numéro public (`num_vehicule`, celui affiché sur le bus) est renseigné dès que l'intégration l'a appris en croisant avec l'API REST.
@@ -252,7 +253,7 @@ Créé automatiquement quand les droits sont présents. État : nombre de véhic
 
 ## Cartes Lovelace
 
-L'intégration inclut quatre cartes personnalisées pour visualiser les données dans votre tableau de bord. Elles sont automatiquement enregistrées au démarrage de Home Assistant.
+L'intégration inclut cinq cartes personnalisées pour visualiser les données dans votre tableau de bord. Elles sont automatiquement enregistrées au démarrage de Home Assistant.
 
 > 💡 Les ressources JS sont versionnées automatiquement (`?v=<version>`) : après une mise à jour de l'intégration, un simple rechargement de la page suffit.
 
@@ -361,6 +362,48 @@ refresh: 30
 | `show_traffic` | Non | `if_disrupted` (défaut), `always` ou `never` |
 | `messages_entity` | Non | Capteur global des messages pour le bandeau infotrafic |
 | `remember` | Non | `false` pour ne pas mémoriser le dernier arrêt (défaut : `true`) |
+
+### Carte 5 — `ginko-vehicules-card`
+
+**Pour :** voir **tous les bus et trams en circulation** sur une carte dédiée (nécessite les droits GTFS-RT, voir plus haut). Séparée de la carte Map de Home Assistant pour ne pas la surcharger.
+
+Affiche :
+- Un fond de carte OpenStreetMap (sans clé), passé en sombre automatiquement avec le thème
+- Un marqueur par véhicule aux couleurs de sa ligne, orienté dans le sens de marche (rond pour un bus, carré arrondi pour un tram), déplacé en douceur à chaque mise à jour
+- Au clic : ligne, terminus, position (arrêt précédent → prochain arrêt), temps avant le prochain arrêt, retard, numéro du véhicule
+- Des filtres par ligne (mémorisés dans le navigateur)
+- Un champ de recherche d'arrêt : l'arrêt est épinglé sur la carte, seuls les véhicules des lignes qui le desservent restent affichés, et ses prochains passages apparaissent sous la carte
+- La position d'une personne, si configurée
+
+> La position des véhicules est **estimée** entre l'arrêt précédent et le prochain d'après le temps restant (le flux Ginko ne contient pas de GPS). Elle est juste à une ou deux centaines de mètres près, et un véhicule bloqué continue d'« avancer » jusqu'à la prochaine mise à jour de son estimation.
+
+**Configuration YAML :**
+
+```yaml
+type: custom:ginko-vehicules-card
+entity: sensor.ginko_vehicules
+hauteur: 360
+zoom: 13
+lignes: [L3, T1, T2]        # optionnel
+person_entity: person.moi   # optionnel
+```
+
+| Option | Obligatoire | Description |
+|---|---|---|
+| `entity` | Non | `sensor.ginko_vehicules` (défaut) |
+| `hauteur` | Non | Hauteur de la carte en pixels, 200 à 900 (défaut : 360) |
+| `zoom` | Non | Zoom initial, 10 à 18 (défaut : 13) |
+| `centre` | Non | `[latitude, longitude]` du centre initial (défaut : centre de Besançon) |
+| `lignes` | Non | Restreint la carte à ces lignes ; vide = toutes |
+| `arret` | Non | Arrêt affiché au chargement |
+| `person_entity` | Non | Entité `person` à afficher sur la carte |
+| `messages_entity` | Non | Capteur des messages pour le bandeau infotrafic des passages |
+| `tuiles` | Non | URL de tuiles `{z}/{x}/{y}` pour un autre fond de carte |
+| `remember` | Non | `false` pour ne pas mémoriser filtres et dernier arrêt |
+
+La bibliothèque de carte (Leaflet) est chargée depuis `unpkg.com` à la première ouverture de la carte, et les tuiles depuis `tile.openstreetmap.org` : le navigateur qui affiche le tableau de bord doit y avoir accès.
+
+---
 
 ---
 
