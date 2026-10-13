@@ -137,6 +137,16 @@
           "description": "Nombre de passages par ligne et direction (1 à 5)."
         }
       }
+    },
+    "trace_ligne": {
+      "name": "Tracé d'une ligne",
+      "description": "Renvoie, pour chaque sens d'une ligne, le tracé géographique et la liste ordonnée des arrêts (d'après le GTFS).",
+      "fields": {
+        "ligne": {
+          "name": "Ligne",
+          "description": "Numéro public (L3, T1, 7…) ou identifiant de la ligne."
+        }
+      }
     }
   }
 }

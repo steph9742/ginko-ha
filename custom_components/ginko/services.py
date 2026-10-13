@@ -10,18 +10,29 @@ from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError, 
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
+from datetime import date
+
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+import aiohttp
+
 from .const import DOMAIN, CONF_API_KEY
-from .coordinator import _api_get, apply_rt
+from .coordinator import _api_get, apply_rt, rt_coordinator
+from .gtfs import GTFS_URL, GinkoGtfs
 
 SERVICE_CHERCHER_ARRET = "chercher_arret"
 SERVICE_GET_HORAIRES = "get_horaires"
+SERVICE_TRACE_LIGNE = "trace_ligne"
 
 ARRETS_CACHE_TTL = 3600
 HORAIRES_CACHE_TTL = 20
 
 CHERCHER_ARRET_SCHEMA = vol.Schema({
     vol.Required("recherche"): cv.string,
-    vol.Optional("limite", default=10): vol.All(vol.Coerce(int), vol.Range(min=1, max=50)),
+    vol.Optional("limite", default=10): vol.All(vol.Coerce(int), vol.Range(min=1, max=1000)),
+})
+
+TRACE_LIGNE_SCHEMA = vol.Schema({
+    vol.Required("ligne"): cv.string,
 })
 
 GET_HORAIRES_SCHEMA = vol.Schema({
@@ -136,6 +147,38 @@ async def _get_horaires(call: ServiceCall) -> ServiceResponse:
     return data
 
 
+async def _gtfs(hass: HomeAssistant) -> GinkoGtfs:
+    rt = rt_coordinator(hass, _api_key(hass))
+    if rt and rt.gtfs.loaded:
+        return rt.gtfs
+    store = hass.data.setdefault(DOMAIN, {})
+    gtfs: GinkoGtfs = store.get("_gtfs_services") or GinkoGtfs()
+    store["_gtfs_services"] = gtfs
+    today = date.today()
+    if gtfs.needs_reload(today):
+        session = async_get_clientsession(hass)
+        try:
+            async with session.get(GTFS_URL, timeout=aiohttp.ClientTimeout(total=60)) as resp:
+                resp.raise_for_status()
+                raw = await resp.read()
+        except aiohttp.ClientError as err:
+            raise HomeAssistantError(f"GTFS indisponible : {err}") from err
+        await hass.async_add_executor_job(gtfs.load, raw, today)
+    return gtfs
+
+
+async def _trace_ligne(call: ServiceCall) -> ServiceResponse:
+    hass = call.hass
+    gtfs = await _gtfs(hass)
+    route_id = gtfs.route_id_for(call.data["ligne"])
+    if not route_id:
+        raise ServiceValidationError(f"Ligne inconnue : {call.data['ligne']}")
+    trace = gtfs.trace_ligne(route_id)
+    if not trace:
+        raise ServiceValidationError(f"Aucune course connue pour la ligne {call.data['ligne']} ces jours-ci")
+    return trace
+
+
 def async_register_services(hass: HomeAssistant) -> None:
     if hass.services.has_service(DOMAIN, SERVICE_GET_HORAIRES):
         return
@@ -146,4 +189,8 @@ def async_register_services(hass: HomeAssistant) -> None:
     hass.services.async_register(
         DOMAIN, SERVICE_GET_HORAIRES, _get_horaires,
         schema=GET_HORAIRES_SCHEMA, supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_TRACE_LIGNE, _trace_ligne,
+        schema=TRACE_LIGNE_SCHEMA, supports_response=SupportsResponse.ONLY,
     )

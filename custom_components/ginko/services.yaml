@@ -29,3 +29,11 @@ get_horaires:
           min: 1
           max: 5
           mode: slider
+
+trace_ligne:
+  fields:
+    ligne:
+      required: true
+      example: "L3"
+      selector:
+        text:

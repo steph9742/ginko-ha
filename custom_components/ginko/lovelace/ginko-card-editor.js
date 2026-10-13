@@ -707,6 +707,11 @@ class GinkoVehiculesCardEditor extends HTMLElement {
       </div>
 
       <div class="gk-field">
+        <label class="gk-check-label"><input id="arrets" type="checkbox" ${(cfg.arrets ?? true) ? "checked" : ""}> Afficher les arrêts quand la carte est zoomée</label>
+        <div class="gk-hint">Un clic sur un arrêt affiche ses prochains passages. Les perturbations sont signalées sur les arrêts concernés.</div>
+      </div>
+
+      <div class="gk-field">
         <label>Arrêt prédéfini <span style="font-weight:400;text-transform:none">(optionnel)</span></label>
         <input id="arret" type="text" value="${this._esc(cfg.arret ?? "")}" placeholder="ex. Gare Viotte">
       </div>
@@ -779,6 +784,12 @@ class GinkoVehiculesCardEditor extends HTMLElement {
         if (key === "scolaires") this._render();
       });
     }
+    const arretsEl = this.shadowRoot.querySelector("#arrets");
+    if (arretsEl) arretsEl.addEventListener("change", e => {
+      const cfg = { ...this._config };
+      if (e.target.checked) delete cfg.arrets; else cfg.arrets = false;
+      emit(cfg);
+    });
     bind("arret", "arret");
     bind("person_entity", "person_entity");
     bind("messages_entity", "messages_entity");
@@ -795,6 +806,7 @@ class GinkoVehiculesCardEditor extends HTMLElement {
       Array.isArray(c.centre) ? `centre: [${c.centre.join(", ")}]` : null,
       Array.isArray(c.lignes) && c.lignes.length ? `lignes: [${c.lignes.join(", ")}]` : null,
       c.scolaires ? `scolaires: true` : null,
+      c.arrets === false ? `arrets: false` : null,
       c.arret ? `arret: ${c.arret}` : null,
       c.person_entity ? `person_entity: ${c.person_entity}` : null,
       c.suivre_personne ? `suivre_personne: true` : null,

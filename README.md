@@ -372,8 +372,11 @@ Affiche :
 - Un marqueur par véhicule aux couleurs de sa ligne, en forme de goutte pointée dans le sens de marche (carré pour un tram), déplacé en douceur à chaque mise à jour ; halo animé quand le véhicule est à quai, pastille ambre « +N » avec le retard en minutes à partir de 2 min ; une légende rappelle ces codes sous la carte
 - Les véhicules qui attendent à leur terminus restent visibles (statut « au départ ») jusqu'à 25 min avant leur prochaine course
 - Deux boutons sur la carte : centrer sur la personne (appui long : suivre la personne en continu) et cadrer sur les véhicules affichés
+- **Le tracé d'une ligne** et ses arrêts quand une seule ligne est filtrée (ou depuis le lien « Voir le tracé de la ligne » du popup d'un véhicule)
+- **Les arrêts** de la zone quand la carte est zoomée (petits points) : un clic affiche leurs prochains passages, sans passer par la recherche
+- **Les perturbations** épinglées sur les arrêts concernés (d'après les alertes GTFS-RT), avec le détail au survol
 - Au clic : ligne, terminus, position (arrêt précédent → prochain arrêt), retard, puis **l'heure estimée d'arrivée aux cinq prochains arrêts**, et le numéro du véhicule
-- Des filtres par ligne sur une rangée défilante (mémorisés dans le navigateur) ; les lignes scolaires (D…) sont masquées sauf option `scolaires`
+- Des filtres par ligne sur une rangée défilante (mémorisés dans le navigateur) : un clic sur une ligne l'affiche seule, un clic sur une autre l'ajoute, « Toutes » remet tout ; les lignes scolaires (D…) sont masquées sauf option `scolaires`
 - Un champ de recherche d'arrêt : l'arrêt est épinglé sur la carte, seuls les véhicules des lignes qui le desservent restent affichés, et ses prochains passages apparaissent sous la carte
 - La position d'une personne, si configurée
 
@@ -398,6 +401,7 @@ person_entity: person.moi   # optionnel
 | `centre` | Non | `[latitude, longitude]` du centre initial (défaut : centre de Besançon) |
 | `lignes` | Non | Restreint la carte à ces lignes (cases à cocher dans l'éditeur) ; vide = toutes |
 | `scolaires` | Non | `true` pour afficher les lignes scolaires D… (défaut : masquées) |
+| `arrets` | Non | `false` pour ne pas afficher les arrêts sur la carte (défaut : affichés à partir du zoom `arrets_zoom`, 15) |
 | `suivre_personne` | Non | `true` pour garder la carte centrée sur la personne (défaut : `false`) |
 | `arret` | Non | Arrêt affiché au chargement |
 | `person_entity` | Non | Entité `person` à afficher sur la carte |
@@ -426,6 +430,16 @@ Recherche des arrêts par nom (accents et casse ignorés ; les noms commençant 
 
 Réponse : `{ arrets: [ { nom, latitude, longitude, accessible, quais } ] }`
 
+### `ginko.trace_ligne`
+
+Tracé géographique et arrêts d'une ligne, pour chaque sens, d'après le GTFS (fonctionne sans les droits GTFS-RT).
+
+| Champ | Obligatoire | Description |
+|---|---|---|
+| `ligne` | ✅ Oui | Numéro public (`L3`, `T1`, `7`…) ou identifiant de la ligne |
+
+Réponse : `{ id_ligne, num, nom, couleurFond, couleurTexte, mode, variantes: [ { sens, terminus, trace: [[lat, lon], …], arrets: [ { id, nom, lat, lon } ] } ] }`
+
 ### `ginko.get_horaires`
 
 Prochains passages d'un arrêt, qu'il soit suivi par un capteur ou non.
@@ -452,6 +466,31 @@ sequence:
         Prochain {{ horaires.passages[0].numLignePublic }} vers
         {{ horaires.passages[0].destination }} dans {{ horaires.passages[0].temps }}
 ```
+
+**Exemple : être prévenu quand un bus précis approche de son arrêt** (droits GTFS-RT) :
+
+```yaml
+alias: "Mon L3 arrive à Blum"
+trigger:
+  - platform: template
+    value_template: >
+      {{ state_attr('sensor.ginko_vehicules', 'vehicules')
+         | selectattr('ligne', 'eq', 'L3')
+         | selectattr('sens', 'eq', 'aller')
+         | selectattr('prochain_arret', 'eq', 'Blum')
+         | selectattr('dans_sec', 'le', 180)
+         | list | count > 0 }}
+action:
+  - service: notify.mobile_app
+    data:
+      message: >
+        {% set v = state_attr('sensor.ginko_vehicules', 'vehicules')
+           | selectattr('ligne', 'eq', 'L3') | selectattr('prochain_arret', 'eq', 'Blum') | first %}
+        Le L3 vers {{ v.terminus }} arrive à Blum dans {{ (v.dans_sec / 60) | round }} min
+        {% if v.retard and v.retard > 60 %}(retard {{ (v.retard / 60) | round }} min){% endif %}
+```
+
+Chaque véhicule porte aussi `prochains` (ses six prochains arrêts avec `heure` et `dans_sec`) pour prévoir plus loin que le prochain arrêt.
 
 **Exemple depuis une autre intégration (Python) :**
 

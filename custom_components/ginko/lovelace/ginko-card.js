@@ -1,7 +1,7 @@
 // custom_components/ginko/lovelace/ginko-card.js
 // Ginko Besançon — Lovelace custom card
 
-const VERSION = "1.4.2";
+const VERSION = "1.5.0";
 
 // ── SVG icons ────────────────────────────────────────────────────────────────
 
@@ -1346,6 +1346,10 @@ const VEHICULES_STYLES = `
   .gk-map-btn.on { background:#dbeafe; color:#1d4ed8; }
   .gk-map.dark .gk-map-btn { background:#2a2a2a; color:#ddd; border-color:rgba(255,255,255,0.2); }
   .gk-map.dark .gk-map-btn.on { background:#1e3a8a; color:#bfdbfe; }
+  .gk-alert-pin { width:22px; height:22px; display:flex; align-items:center; justify-content:center; background:#fff; border-radius:50%; border:2px solid #d97706; box-shadow:0 1px 4px rgba(0,0,0,0.35); }
+  .gk-alert-pin svg { width:13px; height:13px; color:#d97706; }
+  .gk-popup-link { display:inline-block; margin-top:5px; color:#1d4ed8; cursor:pointer; font-size:11px; text-decoration:underline; }
+  .leaflet-tooltip.gk-tip { font-family:var(--paper-font-body1_-_font-family, system-ui, sans-serif); font-size:11px; padding:3px 7px; }
   .gk-legend { padding:5px 12px; font-size:10px; color:var(--gk-txt-3); display:flex; gap:12px; flex-wrap:wrap; border-bottom:0.5px solid var(--gk-border); }
   .gk-legend span { display:inline-flex; align-items:center; gap:4px; }
   .gk-legend i { display:inline-block; width:9px; height:9px; border-radius:50%; }
@@ -1395,6 +1399,13 @@ class GinkoVehiculesCard extends GinkoRechercheCard {
     this._suggCoords = new Map();
     this._arretCoords = null;
     this._lastStamp = null;
+    this._traceCache = new Map();
+    this._traceLayer = null;
+    this._traceShown = null;
+    this._arretsAll = null;
+    this._arretsLayer = null;
+    this._alertLayer = null;
+    this._alertStamp = null;
   }
 
   setConfig(config) {
@@ -1411,6 +1422,8 @@ class GinkoVehiculesCard extends GinkoRechercheCard {
       lignes:          Array.isArray(config.lignes) ? config.lignes.map(String) : [],
       scolaires:       config.scolaires ?? false,
       suivre_personne: config.suivre_personne ?? false,
+      arrets:          config.arrets ?? true,
+      arrets_zoom:     num(config.arrets_zoom, 15, 12, 18),
       arret:           config.arret ?? "",
       placeholder:     config.placeholder ?? "Voir les passages à un arrêt…",
       remember:        config.remember ?? true,
@@ -1438,6 +1451,11 @@ class GinkoVehiculesCard extends GinkoRechercheCard {
     this._markers.clear();
     this._stopMarker = null;
     this._personMarker = null;
+    this._traceLayer = null;
+    this._traceShown = null;
+    this._arretsLayer = null;
+    this._alertLayer = null;
+    this._alertStamp = null;
     this._shellBuilt = false;
   }
 
@@ -1514,12 +1532,12 @@ class GinkoVehiculesCard extends GinkoRechercheCard {
       const chip = e.target.closest(".gk-chip");
       if (!chip) return;
       const k = chip.dataset.ligne;
-      if (k === "*") this._active = null;
-      else {
-        const all = this._lignesDisponibles();
-        const set = this._active ? new Set(this._active) : new Set(all);
+      if (k === "*" || !this._active) {
+        this._active = k === "*" ? null : new Set([k]);
+      } else {
+        const set = new Set(this._active);
         if (set.has(k)) set.delete(k); else set.add(k);
-        this._active = set.size === all.length ? null : set;
+        this._active = set.size === 0 || set.size === this._lignesDisponibles().length ? null : set;
       }
       try {
         if (this._config.remember) {
@@ -1692,7 +1710,128 @@ class GinkoVehiculesCard extends GinkoRechercheCard {
     const fix = () => this._map && this._map.invalidateSize();
     if (link) link.addEventListener("load", fix);
     setTimeout(fix, 200); setTimeout(fix, 1200);
+    this._map.on("moveend zoomend", () => this._updateArrets());
+    this._map.on("popupopen", e => {
+      const link = e.popup.getElement()?.querySelector(".gk-popup-link");
+      if (link) link.addEventListener("click", () => {
+        this._active = new Set([link.dataset.ligne]);
+        try { if (this._config.remember) localStorage.setItem(this._filterKey(), JSON.stringify([...this._active])); } catch (err) {}
+        this._map.closePopup();
+        this._renderChips();
+        this._updateMap(true);
+      });
+    });
     this._updateMap(true);
+    if (this._config.arrets) this._ensureArrets();
+  }
+
+  async _ensureArrets() {
+    if (this._arretsAll) return this._arretsAll;
+    try {
+      const resp = await this._callService("chercher_arret", { recherche: "", limite: 1000 });
+      this._arretsAll = (resp?.arrets ?? []).filter(a => a?.nom && a.latitude != null && a.longitude != null);
+      for (const a of this._arretsAll) this._suggCoords.set(a.nom, [Number(a.latitude), Number(a.longitude)]);
+    } catch (err) {
+      this._arretsAll = [];
+    }
+    this._updateArrets();
+    this._updateAlertes(true);
+    return this._arretsAll;
+  }
+
+  _updateArrets() {
+    if (!this._map || !this._L || !this._config.arrets) return;
+    const L = this._L;
+    if (!this._arretsLayer) this._arretsLayer = L.layerGroup().addTo(this._map);
+    this._arretsLayer.clearLayers();
+    if (!this._arretsAll || this._map.getZoom() < this._config.arrets_zoom) return;
+    const bounds = this._map.getBounds().pad(0.1);
+    const traced = new Set(this._traceShown && this._traceCache.get(this._traceShown)
+      ? this._traceCache.get(this._traceShown).variantes.flatMap(v => v.arrets.map(a => a.nom)) : []);
+    const renderer = this._canvas || (this._canvas = L.canvas({ padding: 0.5 }));
+    for (const a of this._arretsAll) {
+      if (traced.has(a.nom)) continue;
+      const ll = [Number(a.latitude), Number(a.longitude)];
+      if (!bounds.contains(ll)) continue;
+      const m = L.circleMarker(ll, { renderer, radius: 4, color: "#555", weight: 1.5, fillColor: "#fff", fillOpacity: 1 })
+        .bindTooltip(a.nom, { className: "gk-tip", direction: "top", offset: [0, -4] })
+        .on("click", () => this._select(a.nom));
+      this._arretsLayer.addLayer(m);
+    }
+  }
+
+  async _loadTrace(ligne) {
+    if (this._traceCache.has(ligne)) return this._traceCache.get(ligne);
+    try {
+      const data = await this._callService("trace_ligne", { ligne });
+      this._traceCache.set(ligne, data);
+      return data;
+    } catch (err) {
+      this._traceCache.set(ligne, null);
+      return null;
+    }
+  }
+
+  async _updateTrace() {
+    if (!this._map || !this._L) return;
+    const L = this._L;
+    const wanted = this._active && this._active.size === 1 ? [...this._active][0] : null;
+    if (wanted === this._traceShown) return;
+    if (this._traceLayer) { this._map.removeLayer(this._traceLayer); this._traceLayer = null; }
+    this._traceShown = wanted;
+    if (!wanted) { this._updateArrets(); return; }
+    const data = await this._loadTrace(wanted);
+    if (!data || this._traceShown !== wanted) return;
+    const color = _color(data.couleurFond ?? "888");
+    const layer = L.layerGroup();
+    const pts = [];
+    for (const v of data.variantes ?? []) {
+      if (Array.isArray(v.trace) && v.trace.length > 1) {
+        layer.addLayer(L.polyline(v.trace, { color, weight: 5, opacity: 0.8, lineJoin: "round", lineCap: "round", interactive: false }));
+        pts.push(...v.trace);
+      }
+      for (const a of v.arrets ?? []) {
+        if (a.lat == null) continue;
+        layer.addLayer(L.circleMarker([a.lat, a.lon], { radius: 5, color, weight: 2.5, fillColor: "#fff", fillOpacity: 1 })
+          .bindTooltip(`${a.nom}`, { className: "gk-tip", direction: "top", offset: [0, -5] })
+          .on("click", () => this._select(a.nom)));
+      }
+    }
+    this._traceLayer = layer.addTo(this._map);
+    if (pts.length) this._map.fitBounds(L.latLngBounds(pts).pad(0.05), { animate: true, maxZoom: 15 });
+    this._updateArrets();
+  }
+
+  _updateAlertes(force = false) {
+    if (!this._map || !this._L) return;
+    const L = this._L;
+    const e = this._config.messages_entity ? this._hass?.states[this._config.messages_entity] : null;
+    const alertes = Array.isArray(e?.attributes?.alertes) ? e.attributes.alertes : [];
+    const stamp = JSON.stringify(alertes.map(a => [a.id, a.arrets]));
+    if (!force && stamp === this._alertStamp) return;
+    this._alertStamp = stamp;
+    if (!this._alertLayer) this._alertLayer = L.layerGroup().addTo(this._map);
+    this._alertLayer.clearLayers();
+    if (!alertes.length) return;
+    const byStop = new Map();
+    for (const a of alertes) {
+      for (const nom of a.arrets ?? []) {
+        const ll = this._suggCoords.get(nom);
+        if (!ll) continue;
+        const list = byStop.get(nom) ?? { ll, items: [] };
+        list.items.push(a);
+        byStop.set(nom, list);
+      }
+    }
+    for (const [nom, { ll, items }] of byStop) {
+      const txt = items.map(a => `${a.titre ?? "Perturbation"}${a.lignes?.length ? ` (${a.lignes.join(", ")})` : ""}`).join(" · ");
+      L.marker(ll, {
+        icon: L.divIcon({ className: "gk-veh-wrap", html: `<div class="gk-alert-pin">${ICON_WARN}</div>`, iconSize: [22, 22], iconAnchor: [11, 11] }),
+        zIndexOffset: 300, title: nom,
+      }).bindTooltip(`${nom} : ${txt}`, { className: "gk-tip", direction: "top", offset: [0, -10] })
+        .on("click", () => this._select(nom))
+        .addTo(this._alertLayer);
+    }
   }
 
   _applyTiles() {
@@ -1765,9 +1904,11 @@ class GinkoVehiculesCard extends GinkoRechercheCard {
       return `<span class="n ${cls}">${_esc(p.nom)}</span><span class="h ${cls}">${p.heure ? _hhmm(p.heure) : "—"}</span><span class="d ${cls}">${p.non_desservi ? "non desservi" : dans == null ? "" : dans === 0 ? "maintenant" : `${dans} min`}</span>`;
     }).join("");
     const num = b.num_vehicule ?? b.id;
+    const traceLink = this._traceShown === String(b.ligne) ? "" : `<span class="gk-popup-link" data-ligne="${_esc(String(b.ligne ?? ""))}">Voir le tracé de la ligne</span>`;
     return `<span class="gk-popup-badge" style="background:${bg};color:${fg}">${_esc(String(b.ligne ?? "?"))}</span><b>→ ${_esc(b.terminus ?? "")}</b>
       <div class="gk-popup-pos">${pos}</div>${retard}
       ${rows ? `<div class="gk-popup-next">${rows}</div>` : ""}
+      ${traceLink}
       <div class="gk-popup-foot">${b.mode === "tram" ? "Tram" : "Bus"} n° ${_esc(String(num ?? "?"))}${b.trace === "droite" ? " · position approximative" : ""}</div>`;
   }
 
@@ -1829,6 +1970,8 @@ class GinkoVehiculesCard extends GinkoRechercheCard {
     } else if (this._personMarker) {
       this._map.removeLayer(this._personMarker); this._personMarker = null;
     }
+    this._updateTrace();
+    this._updateAlertes();
     this._renderChips();
   }
 }

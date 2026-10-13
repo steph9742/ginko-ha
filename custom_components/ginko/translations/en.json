@@ -193,6 +193,16 @@
           "description": "Number of departures per line and direction (1 to 5)."
         }
       }
+    },
+    "trace_ligne": {
+      "name": "Line route",
+      "description": "Returns, for each direction of a line, its geographic path and ordered stop list (from the GTFS).",
+      "fields": {
+        "ligne": {
+          "name": "Line",
+          "description": "Public number (L3, T1, 7…) or line id."
+        }
+      }
     }
   }
 }

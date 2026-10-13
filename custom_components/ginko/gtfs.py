@@ -131,6 +131,67 @@ class GinkoGtfs:
     def theoretical(self, trip_id: str) -> dict[int, tuple[str, int]]:
         return {seq: (stop_id, dep) for seq, stop_id, dep in self.stop_times.get(trip_id, [])}
 
+    def route_id_for(self, ligne: str) -> str | None:
+        ligne = str(ligne).strip()
+        if ligne in self.routes:
+            return ligne
+        wanted = ligne.casefold()
+        for rid, r in self.routes.items():
+            if str(r.get("num", "")).casefold() == wanted:
+                return rid
+        return None
+
+    def trace_ligne(self, route_id: str) -> dict | None:
+        route = self.routes.get(route_id)
+        if not route:
+            return None
+        by_dir: dict[str, dict] = {}
+        for tid, t in self.trips.items():
+            if t["route_id"] != route_id:
+                continue
+            d = by_dir.setdefault(t["direction_id"], {"shapes": {}, "best": None, "headsigns": {}})
+            sid = t.get("shape_id")
+            if sid and sid != "0" and sid in self.shapes:
+                d["shapes"][sid] = d["shapes"].get(sid, 0) + 1
+            n = len(self.stop_times.get(tid, []))
+            if d["best"] is None or n > d["best"][0]:
+                d["best"] = (n, tid)
+            if t.get("headsign"):
+                d["headsigns"][t["headsign"]] = d["headsigns"].get(t["headsign"], 0) + 1
+        variantes = []
+        for direction, d in sorted(by_dir.items()):
+            if d["best"] is None:
+                continue
+            shape_id = max(d["shapes"], key=d["shapes"].get) if d["shapes"] else None
+            trace = []
+            if shape_id:
+                lats, lons, _ = self.shapes[shape_id]
+                trace = [[round(a, 5), round(b, 5)] for a, b in zip(lats, lons)]
+            arrets = []
+            seen = set()
+            for _, stop_id, _ in self.stop_times.get(d["best"][1], []):
+                st = self.stops.get(stop_id, {})
+                key = st.get("parent") or stop_id
+                if key in seen:
+                    continue
+                seen.add(key)
+                arrets.append({"id": stop_id, "nom": st.get("nom", stop_id), "lat": st.get("lat"), "lon": st.get("lon")})
+            variantes.append({
+                "sens": "aller" if direction == "0" else "retour",
+                "terminus": max(d["headsigns"], key=d["headsigns"].get) if d["headsigns"] else "",
+                "trace": trace,
+                "arrets": arrets,
+            })
+        return {
+            "id_ligne": route_id,
+            "num": route.get("num"),
+            "nom": route.get("nom"),
+            "couleurFond": route.get("couleurFond"),
+            "couleurTexte": route.get("couleurTexte"),
+            "mode": "tram" if route.get("type") == "0" else "bus",
+            "variantes": variantes,
+        }
+
     def shape_distance(self, shape_id: str, stop_id: str) -> float | None:
         key = (shape_id, stop_id)
         if key in self._proj:
