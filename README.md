@@ -230,7 +230,7 @@ En plus de son API REST, Ginko publie deux flux temps réel normalisés (GTFS-RT
 |---|---|---|
 | Positions des véhicules d'une ligne (mode 5) | Reconstruites à partir des temps d'attente de tous les arrêts de la ligne (3 à 4 requêtes toutes les 10 à 15 s) | Lues dans le flux, pour toutes les lignes à la fois, une requête toutes les 10 s |
 | Position de **tous** les véhicules du réseau | Impossible | Capteur `sensor.ginko_vehicules` |
-| Retard réel d'un passage | Inconnu | Attribut `retard` (secondes) sur chaque passage, affiché « +4 » sur les pilules des cartes |
+| Retard réel d'un passage | Inconnu | Attribut `retard` (secondes) sur chaque passage, affiché dans les cartes à la manière des applications de transport : horaire prévu barré, écart « +4 » à côté, horaire réel estimé en dessous |
 | Arrêts non desservis (déviations) | Texte « Non desservi » fourni par l'API | Même texte, plus le drapeau `nonDesservi` pour les automatisations |
 | Perturbations | Messages par ligne | En plus : attribut `alertes` avec effet, lignes, **arrêts concernés** et périodes de validité |
 

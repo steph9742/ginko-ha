@@ -19,13 +19,25 @@ function _modeIcon(modeTransport) {
   return modeTransport === 1 ? ICON_TRAM : ICON_BUS;
 }
 
-function _retardBadge(p) {
+function _hhmm(ts) {
+  const d = new Date(ts * 1000);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+function _retardInfo(p) {
   const r = Number(p?.retard);
-  if (!Number.isFinite(r) || Math.abs(r) < 60) return "";
+  const t = Number(p?.tempsEnSeconde);
+  if (!Number.isFinite(r) || Math.abs(r) < 60 || !Number.isFinite(t)) return null;
+  const real = Math.floor(Date.now() / 1000) + t;
   const m = Math.round(r / 60);
-  const cls = r > 0 ? "gk-retard gk-retard--late" : "gk-retard gk-retard--early";
-  const title = r > 0 ? `Retard de ${m} min` : `Avance de ${-m} min`;
-  return `<span class="${cls}" title="${title}">${r > 0 ? "+" : "−"}${Math.abs(m)}</span>`;
+  return { m, late: r > 0, prevu: _hhmm(real - r), reel: _hhmm(real) };
+}
+
+function _retardHtml(p, withReal) {
+  const i = _retardInfo(p);
+  if (!i) return "";
+  const title = i.late ? `Prévu à ${i.prevu}, retard de ${i.m} min, passage réel estimé à ${i.reel}` : `Prévu à ${i.prevu}, avance de ${-i.m} min, passage réel estimé à ${i.reel}`;
+  return `<span class="gk-rt" title="${title}"><s>${i.prevu}</s><span class="gk-rt-delta ${i.late ? "late" : "early"}">${i.late ? "+" : "−"}${Math.abs(i.m)}</span>${withReal ? `<span class="gk-rt-real">${i.reel}</span>` : ""}</span>`;
 }
 
 function _iconWifi(color) {
@@ -150,9 +162,14 @@ const STYLES = `
   .gk-icon-wifi { width:13px; height:13px; flex-shrink:0; }
   .gk-icon-access { width:12px; height:12px; color:var(--gk-blue); flex-shrink:0; }
   .gk-approx { font-size:11px; font-weight:700; color:var(--gk-amber); line-height:1; flex-shrink:0; }
-  .gk-retard { font-size:10px; font-weight:700; line-height:1; margin-left:3px; padding:1px 4px; border-radius:4px; align-self:center; }
-  .gk-retard--late { color:#b45309; background:rgba(245,158,11,0.18); }
-  .gk-retard--early { color:#1d4ed8; background:rgba(59,130,246,0.15); }
+  .gk-rt { display:inline-flex; align-items:baseline; gap:3px; font-size:10px; color:var(--gk-txt-3); white-space:nowrap; margin-left:5px; font-variant-numeric:tabular-nums; }
+  .gk-rt s { text-decoration-thickness:1px; }
+  .gk-rt-delta { font-weight:700; }
+  .gk-rt-delta.late { color:#b45309; }
+  .gk-rt-delta.early { color:#1d4ed8; }
+  .gk-rt-real { color:var(--gk-txt-2); font-weight:600; }
+  .gk-next-time-col { display:flex; flex-direction:column; align-items:flex-end; gap:2px; flex-shrink:0; }
+  .gk-next-time-col .gk-rt { margin-left:0; font-size:11px; }
   /* Lines section */
   .gk-lines { padding:0 10px 10px; display:flex; flex-direction:column; gap:6px; }
   .gk-ligne { border-radius:var(--gk-r-md); overflow:hidden; border:0.5px solid var(--gk-border); }
@@ -355,7 +372,7 @@ class GinkoCard extends HTMLElement {
     let timeHtml;
     if (p.typeDeTemps === 0) {
       const mins = String(p.temps ?? "").replace(" min","").trim();
-      timeHtml = `<span class="gk-next-val">${_esc(mins)}</span><span class="gk-next-unit">min</span>${_retardBadge(p)}`;
+      timeHtml = `<span class="gk-next-val">${_esc(mins)}</span><span class="gk-next-unit">min</span>`;
     } else if (p.typeDeTemps === 2) {
       timeHtml = `<span class="gk-next-val--sm" style="color:#b45309;font-style:italic">${_esc(p.temps ?? "—")}</span>`;
     } else {
@@ -368,7 +385,7 @@ class GinkoCard extends HTMLElement {
           <span class="gk-next-dest">→ ${_esc(p.destination ?? "—")}${prec}</span>
           ${gpsIcon}${accessIcon}
         </div>
-        <div class="gk-next-time">${timeHtml}</div>
+        <div class="gk-next-time-col"><div class="gk-next-time">${timeHtml}</div>${_retardHtml(p, true)}</div>
       </div>
       ${posHtml}
     </div>`;
@@ -435,12 +452,12 @@ class GinkoCard extends HTMLElement {
     let timeHtml;
     if (p.typeDeTemps === 0) {
       const mins = String(p.temps ?? "").replace(" min","").trim();
-      timeHtml = `<span class="gk-pill-val">${_esc(mins)}</span><span class="gk-pill-unit">min</span>${_retardBadge(p)}`;
+      timeHtml = `<span class="gk-pill-val">${_esc(mins)}</span><span class="gk-pill-unit">min</span>${_retardHtml(p, true)}`;
     } else if (p.typeDeTemps === 2) {
       // Texte de remplacement : Déviation, Travaux, Bus complet…
       timeHtml = `<span class="gk-pill-disruption">${_esc(p.temps ?? "—")}</span>`;
     } else {
-      timeHtml = `<span class="gk-pill-hhmm">${_esc(p.temps ?? "—")}</span>`;
+      timeHtml = `${_retardHtml(p, false)}<span class="gk-pill-hhmm">${_esc(p.temps ?? "—")}</span>`;
     }
     return `<span class="gk-pill" style="background:rgba(${rgb},${bgA});border-color:rgba(${rgb},${borderA})">
       ${gpsIcon}
