@@ -5,6 +5,7 @@ import logging, math
 import time
 from datetime import date, timedelta
 import aiohttp
+from google.protobuf.message import DecodeError
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -15,6 +16,7 @@ from .gtfs_rt import enrich_passages, parse_alerts, parse_trip_updates
 
 _LOGGER = logging.getLogger(__name__)
 BASE_URL = "https://api.ginko.voyage"
+GTFS_CHECK_SEC = 3600
 MAX_PASSAGES_PER_REQUEST = 45
 
 def _chunk_list(lst, size):
@@ -493,6 +495,9 @@ class GinkoRtCoordinator(DataUpdateCoordinator):
         self._votes_day: date | None = None
         self._alertes: list = []
         self._alertes_at = 0
+        self._gtfs_tag: str | None = None
+        self._gtfs_checked = 0.0
+        self._etat: dict = {}
         super().__init__(
             hass, _LOGGER, name="Ginko GTFS-RT",
             update_interval=timedelta(seconds=10),
@@ -507,19 +512,35 @@ class GinkoRtCoordinator(DataUpdateCoordinator):
         ) as resp:
             if resp.status == 403:
                 return None
+            if resp.status == 429:
+                retry = resp.headers.get("Retry-After", "")
+                self.update_interval = timedelta(seconds=int(retry) if retry.isdigit() else 60)
+                raise UpdateFailed("Ginko GTFS-RT : trop de requêtes (429), nouvel essai plus tard")
             resp.raise_for_status()
             return await resp.read()
 
     async def _ensure_gtfs(self) -> None:
         today = date.today()
-        if not self.gtfs.needs_reload(today):
-            return
         session = async_get_clientsession(self.hass)
+        if not self.gtfs.needs_reload(today):
+            if time.time() - self._gtfs_checked < GTFS_CHECK_SEC:
+                return
+            self._gtfs_checked = time.time()
+            try:
+                async with session.head(GTFS_URL, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                    tag = resp.headers.get("ETag") or resp.headers.get("Last-Modified")
+            except aiohttp.ClientError:
+                return
+            if not tag or tag == self._gtfs_tag:
+                return
         async with session.get(GTFS_URL, timeout=aiohttp.ClientTimeout(total=60)) as resp:
             resp.raise_for_status()
+            tag = resp.headers.get("ETag") or resp.headers.get("Last-Modified")
             raw = await resp.read()
         await self.hass.async_add_executor_job(self.gtfs.load, raw, today)
-        _LOGGER.info("Ginko: GTFS chargé (%d courses sur 3 jours)", len(self.gtfs.trips))
+        self._gtfs_tag = tag
+        self._gtfs_checked = time.time()
+        _LOGGER.info("Ginko: GTFS chargé (%d courses sur 3 jours, version %s)", len(self.gtfs.trips), tag)
 
     def learn_vehicle(self, vid: str, num: str) -> None:
         today = date.today()
@@ -553,8 +574,8 @@ class GinkoRtCoordinator(DataUpdateCoordinator):
 
         if self.rights is not True:
             self.rights = True
-            self.update_interval = timedelta(seconds=10)
             _LOGGER.info("Ginko: GTFS-RT disponible pour cette clé")
+        self.update_interval = timedelta(seconds=10)
 
         try:
             await self._ensure_gtfs()
@@ -564,7 +585,10 @@ class GinkoRtCoordinator(DataUpdateCoordinator):
             return self.data or self._empty()
 
         now = int(time.time())
-        data = await self.hass.async_add_executor_job(parse_trip_updates, raw, self.gtfs, now)
+        try:
+            data = await self.hass.async_add_executor_job(parse_trip_updates, raw, self.gtfs, now, self._etat)
+        except DecodeError as err:
+            raise UpdateFailed(f"Flux GTFS-RT illisible : {err}") from err
 
         if now - self._alertes_at > 60:
             try:
@@ -572,7 +596,7 @@ class GinkoRtCoordinator(DataUpdateCoordinator):
                 if raw_al:
                     self._alertes = await self.hass.async_add_executor_job(parse_alerts, raw_al, self.gtfs)
                 self._alertes_at = now
-            except aiohttp.ClientError:
+            except (aiohttp.ClientError, UpdateFailed, DecodeError):
                 pass
 
         for bus in data["vehicules"]:

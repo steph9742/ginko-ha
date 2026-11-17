@@ -1,7 +1,7 @@
 // custom_components/ginko/lovelace/ginko-card.js
 // Ginko Besançon — Lovelace custom card
 
-const VERSION = "1.5.0";
+const VERSION = "1.5.1";
 
 // ── SVG icons ────────────────────────────────────────────────────────────────
 

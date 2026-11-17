@@ -94,7 +94,7 @@ async def async_setup_entry(
     rt_owner_key = f"_rt_sensors_owner_{entry.data[CONF_API_KEY]}"
     rt_coord: GinkoRtCoordinator | None = rt_coordinator(hass, entry.data[CONF_API_KEY])
     rt_owner = hass.data[DOMAIN].get(rt_owner_key)
-    if rt_coord and rt_coord.rights and (rt_owner is None or rt_owner == entry.entry_id):
+    if rt_coord and rt_coord.rights is not False and (rt_owner is None or rt_owner == entry.entry_id):
         hass.data[DOMAIN][rt_owner_key] = entry.entry_id
         entities.append(GinkoVehiculesSensor(rt_coord))
 

@@ -51,6 +51,7 @@ Avant de commencer, assurez-vous d'avoir :
 > 💡 **Obtenir une clé API :** Rendez-vous sur le portail api Ginko (https://api.ginko.voyage/#prez) et écrivez à ginko.support-ssi@keolis.com en décrivant votre usage (personnel / domotique).
 
 ---
+
 ## Installation
 
 ### Méthode 1 — HACS (recommandée)
@@ -106,7 +107,7 @@ L'intégration propose cinq modes distincts. Vous pouvez créer plusieurs entré
 |---|---|
 | Nom de l'arrêt | Liste déroulante avec autocomplétion |
 | Nombre de passages | De 1 à 5 (défaut : 3) |
-| Intervalle de rafraîchissement | Automatique (tram : 10 s, bus : 30 s) ou manuel de 10 à 300 |
+| Intervalle de rafraîchissement | Automatique (tram : 10 s, bus : 30 s) ou manuel de 10 à 300 s |
 
 **Capteur créé :**
 - `sensor.ginko_<nom_arret>`
@@ -147,7 +148,7 @@ Pour chaque entrée, vous choisissez successivement :
 | Entité personne | Sélecteur d'entité `person.*` |
 | Nombre de passages | De 1 à 5 par arrêt |
 | Nombre d'arrêts max | De 1 à 10 (défaut : 5) |
-| Intervalle de rafraîchissement | Automatique (tram : 10 s, bus : 30 s) ou manuel de 10 à 300 |
+| Intervalle de rafraîchissement | Automatique (tram : 10 s, bus : 30 s) ou manuel de 10 à 300 s |
 
 **Capteur créé :**
 - `sensor.ginko_proximite_<person_name>`
@@ -246,6 +247,8 @@ Créé automatiquement quand les droits sont présents. État : nombre de véhic
 | `lignes` | Lignes ayant au moins un véhicule en circulation |
 | *(par véhicule)* | `lat`, `lon` (position estimée sur le tracé), `cap` (degrés), `progression_segment` (0 à 1 entre les deux arrêts), `trace` (`shape`, `droite` ou `arret`), `mode` (`bus` ou `tram`), `couleurFond`, `couleurTexte`, `prochains` (6 prochains arrêts : `nom`, `heure`, `dans_sec`, `non_desservi`) |
 | `horodatage` | Date du flux |
+
+> Le flux Ginko retire parfois une course pendant quelques dizaines de secondes avant de la remettre. L'intégration garde chaque course en mémoire 2 minutes pour que les véhicules ne clignotent pas sur la carte (attribut `memoire` à `true` sur un véhicule repris de la mémoire). Une course n'est considérée comme commencée qu'une fois partie de son terminus d'origine, et la position d'un véhicule ne recule jamais entre deux mises à jour.
 
 > Le flux ne contient pas de position GPS : la position est exprimée par l'arrêt précédent, le prochain arrêt et le temps restant, comme en mode 5. L'identifiant `id` est l'identifiant interne du véhicule dans le flux ; le numéro public (`num_vehicule`, celui affiché sur le bus) est renseigné dès que l'intégration l'a appris en croisant avec l'API REST.
 
@@ -527,7 +530,7 @@ passages = resp["passages"]
 | `couleurTexte` | string | Couleur du texte de la ligne (hex) |
 | `modeTransport` | string | Type de transport (bus, tram…) |
 | `typeDeTemps` | int | 0 = temps relatif, 1 = heure absolue, 2 = texte de remplacement |
-| `deviation` | bool | `true` si le passage est remplacé par un texte (« Déviation », « Travaux », « Bus complet »…) |
+| `deviation` | bool | true si le passage est remplacé par un texte (« Déviation », « Travaux »…) |
 
 Avec les droits GTFS-RT, chaque objet de `passages` peut porter en plus `retard` (secondes, positif = retard), `nonDesservi` (`true` si l'arrêt est sauté) et `idVehiculeRt` (identifiant interne du véhicule dans le flux).
 
@@ -588,7 +591,7 @@ Avec les droits GTFS-RT, chaque objet de `passages` peut porter en plus `retard`
 | `terminus` | string | Nom du terminus de destination |
 | `prochain_arret` | string | Prochain arrêt |
 | `arret_precedent` | string ou `null` | Arrêt précédent (`null` en départ de terminus) |
-| `statut` | string | `"a_quai"`, `"depart"` ou `"en_route"` |
+| `statut` | string | `"en_route"`, `"a_quai"` (à partir de 10 s avant l'heure annoncée, tant que le véhicule n'est pas reparti, 3 min au plus) ou `"depart"` (en attente au terminus avant sa course) |
 | `dans_sec` | int | Secondes avant le prochain arrêt |
 | `retard` | int ou absent | Retard en secondes au prochain arrêt (GTFS-RT uniquement) |
 | `num_vehicule` | string ou `null` | Numéro public du véhicule (GTFS-RT, dès qu'il est connu) |
@@ -608,7 +611,7 @@ Le capteur porte aussi `source` (`rest` ou `gtfs_rt`) et `horodatage`.
 | Attribut | Type | Description |
 |---|---|---|
 | `messages` | liste | Tous les messages de perturbation actifs |
-| `alertes` | liste | GTFS-RT uniquement : `{titre, texte, effet, cause, lignes, arrets, periodes}` |
+| `alertes` | liste | GTFS-RT uniquement : `{titre, texte, effet, cause, lignes, arrets, arrets_ids, periodes}`. `arrets` ne contient que des noms d'arrêts, sans doublon (les quais d'un même arrêt sont regroupés) ; `arrets_ids` liste les identifiants GTFS concernés, pour filtrer par arrêt |
 
 ---
 
@@ -638,10 +641,9 @@ Options disponibles selon le mode :
 **Symptôme :** L'intégration refuse de s'ajouter ou affiche une erreur d'authentification.
 
 **Solutions :**
-- Vérifiez votre clé sur le portail api Ginko
 - Assurez-vous qu'il n'y a pas d'espace au début ou à la fin de la clé
 - Si la clé ne fonctionne plus, contactez **ginko.support-ssi@keolis.com** pour en obtenir une nouvelle
-  
+
 > 💡 Si votre clé devient invalide après l'installation, Home Assistant affiche automatiquement une notification « Ré-authentification requise » : cliquez dessus pour saisir la nouvelle clé, sans rien reconfigurer d'autre.
 
 ---

@@ -1,6 +1,7 @@
 # custom_components/ginko/__init__.py
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 
@@ -109,17 +110,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry_data = entry.data["entry"]
 
     # Shared info coordinator — created once per api_key, needed for all modes
-    info_key = f"_info_{entry.data[CONF_API_KEY]}"
-    if info_key not in hass.data[DOMAIN]:
-        info_coord = GinkoInfoCoordinator(hass, entry.data[CONF_API_KEY])
-        await info_coord.async_config_entry_first_refresh()
-        hass.data[DOMAIN][info_key] = info_coord
+    api_key = entry.data[CONF_API_KEY]
+    info_key = f"_info_{api_key}"
+    rt_key = f"_rt_{api_key}"
+    lock: asyncio.Lock = hass.data[DOMAIN].setdefault(f"_lock_{api_key}", asyncio.Lock())
+    async with lock:
+        if info_key not in hass.data[DOMAIN]:
+            info_coord = GinkoInfoCoordinator(hass, api_key)
+            await info_coord.async_config_entry_first_refresh()
+            hass.data[DOMAIN][info_key] = info_coord
 
-    rt_key = f"_rt_{entry.data[CONF_API_KEY]}"
-    if rt_key not in hass.data[DOMAIN]:
-        rt_coord = GinkoRtCoordinator(hass, entry.data[CONF_API_KEY])
-        await rt_coord.async_refresh()
-        hass.data[DOMAIN][rt_key] = rt_coord
+        if rt_key not in hass.data[DOMAIN]:
+            rt_coord = GinkoRtCoordinator(hass, api_key)
+            hass.data[DOMAIN][f"_rt_keepalive_{api_key}"] = rt_coord.async_add_listener(lambda: None)
+            await rt_coord.async_refresh()
+            hass.data[DOMAIN][rt_key] = rt_coord
 
     if entry_data.get("mode") == MODE_LIGNE:
         # Pas de coordinator propre — réutilise le GinkoInfoCoordinator partagé
@@ -197,6 +202,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             info_coord: GinkoInfoCoordinator = hass.data[DOMAIN].pop(info_key, None)
             if info_coord:
                 await info_coord.async_shutdown()
+            keepalive = hass.data[DOMAIN].pop(f"_rt_keepalive_{api_key}", None)
+            if keepalive:
+                keepalive()
             rt_coord: GinkoRtCoordinator = hass.data[DOMAIN].pop(f"_rt_{api_key}", None)
             if rt_coord:
                 await rt_coord.async_shutdown()

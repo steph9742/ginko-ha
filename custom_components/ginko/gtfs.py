@@ -25,6 +25,7 @@ class GinkoGtfs:
         self.shapes: dict[str, tuple[list[float], list[float], list[float]]] = {}
         self.services: dict[str, set[str]] = {}
         self._proj: dict[tuple[str, str], float | None] = {}
+        self._stops_ci: dict[str, str] = {}
         self.loaded_at: datetime | None = None
         self.loaded_for: date | None = None
 
@@ -122,11 +123,32 @@ class GinkoGtfs:
         self.routes, self.stops, self.trips, self.stop_times, self.services = routes, stops, trips, stop_times, services
         self.shapes = shapes
         self._proj = {}
+        self._stops_ci = {sid.strip().casefold(): sid for sid in stops}
         self.loaded_at = datetime.now()
         self.loaded_for = today
 
     def stop_name(self, stop_id: str) -> str:
         return self.stops.get(stop_id, {}).get("nom", stop_id)
+
+    def resolve_stop(self, stop_id: str) -> str | None:
+        if not stop_id:
+            return None
+        if stop_id in self.stops:
+            return stop_id
+        key = stop_id.strip()
+        if key in self.stops:
+            return key
+        return self._stops_ci.get(key.casefold())
+
+    def resolve_stop_name(self, stop_id: str) -> str | None:
+        sid = self.resolve_stop(stop_id)
+        if sid is None:
+            return None
+        stop = self.stops[sid]
+        if stop.get("nom"):
+            return stop["nom"]
+        parent = self.stops.get(stop.get("parent") or "", {})
+        return parent.get("nom") or None
 
     def theoretical(self, trip_id: str) -> dict[int, tuple[str, int]]:
         return {seq: (stop_id, dep) for seq, stop_id, dep in self.stop_times.get(trip_id, [])}

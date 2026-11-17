@@ -1,6 +1,7 @@
 # custom_components/ginko/gtfs_rt.py
 from __future__ import annotations
 
+import logging
 import math
 from datetime import datetime
 
@@ -8,9 +9,15 @@ from google.transit import gtfs_realtime_pb2 as rt
 
 from .gtfs import GinkoGtfs, _bearing as _bearing_ll
 
+_LOGGER = logging.getLogger(__name__)
+_ARRETS_INCONNUS: set[str] = set()
+
 SKIPPED = rt.TripUpdate.StopTimeUpdate.SKIPPED
-A_QUAI_SEC = 30
+A_QUAI_SEC = 10
+A_QUAI_MAX_SEC = 180
 TERMINUS_SEC = 1500
+MEMOIRE_SEC = 120
+DEPART_MARGE_SEC = 60
 
 
 def _bearing(a: dict, b: dict) -> int | None:
@@ -19,18 +26,14 @@ def _bearing(a: dict, b: dict) -> int | None:
     return _bearing_ll(a["lat"], a["lon"], b["lat"], b["lon"])
 
 
-def _position(gtfs: GinkoGtfs, trip: dict, theo: dict, prev_seq: int, first_seq: int, midnight: int, est_first, retard, now: int, started: bool) -> dict:
-    nxt_id = theo[first_seq][0] if first_seq in theo else None
+def _position(gtfs: GinkoGtfs, trip: dict, theo: dict, prev_seq: int | None, next_seq: int, frac: float) -> dict:
+    nxt_id = theo[next_seq][0] if next_seq in theo else None
     prv_id = theo[prev_seq][0] if prev_seq in theo else None
     nxt = gtfs.stops.get(nxt_id, {}) if nxt_id else {}
     prv = gtfs.stops.get(prv_id, {}) if prv_id else {}
-    out = {"lat": nxt.get("lat"), "lon": nxt.get("lon"), "cap": None, "progression_segment": 1.0, "trace": "arret"}
-    if not started or not prv or prv.get("lat") is None or nxt.get("lat") is None or est_first is None:
+    out = {"lat": nxt.get("lat"), "lon": nxt.get("lon"), "cap": None, "progression_segment": round(frac, 2), "trace": "arret"}
+    if frac >= 1.0 or not prv or prv.get("lat") is None or nxt.get("lat") is None:
         return out
-    prev_est = midnight + theo[prev_seq][1] + (retard or 0)
-    span = est_first - prev_est
-    frac = 1.0 if span <= 0 else max(0.0, min(1.0, (now - prev_est) / span))
-    out["progression_segment"] = round(frac, 2)
     shape_id = trip.get("shape_id")
     if shape_id and shape_id != "0":
         dp = gtfs.shape_distance(shape_id, prv_id)
@@ -54,99 +57,169 @@ def _event(stu):
     return ev.time if ev.time else None
 
 
-def parse_trip_updates(raw: bytes, gtfs: GinkoGtfs, now: int) -> dict:
+def _lire_flux(raw: bytes, now: int) -> tuple[int, dict[str, dict]]:
     feed = rt.FeedMessage()
     feed.ParseFromString(raw)
-    vehicules: dict[str, dict] = {}
-    index: dict[tuple[str, str], list[tuple[int, int, bool, str, bool]]] = {}
-
+    courses = {}
     for entity in feed.entity:
         if not entity.HasField("trip_update"):
             continue
         tu = entity.trip_update
-        trip_id = tu.trip.trip_id
+        if not tu.trip.trip_id or not tu.stop_time_update:
+            continue
+        vid = tu.vehicle.id if tu.vehicle.id and tu.vehicle.id != "0" else ""
+        courses[tu.trip.trip_id] = {
+            "vid": vid,
+            "start_date": tu.trip.start_date or datetime.fromtimestamp(now).strftime("%Y%m%d"),
+            "updates": [(u.stop_sequence, _event(u), u.schedule_relationship == SKIPPED) for u in tu.stop_time_update],
+        }
+    return feed.header.timestamp or now, courses
+
+
+def _fusionner(courses: dict[str, dict], memoire: dict[str, dict], now: int) -> tuple[dict[str, dict], int]:
+    for tid, c in courses.items():
+        m = memoire.setdefault(tid, {})
+        m["data"] = c
+        m["vu"] = now
+    fusion = dict(courses)
+    reprises = 0
+    for tid, m in list(memoire.items()):
+        if tid in courses:
+            continue
+        if now - m.get("vu", 0) > MEMOIRE_SEC:
+            del memoire[tid]
+            continue
+        restants = [u for u in m["data"]["updates"] if u[1] is None or u[1] >= now]
+        if restants:
+            fusion[tid] = {**m["data"], "updates": restants}
+            reprises += 1
+    return fusion, reprises
+
+
+def _seq_precedente(theo: dict, seq: int) -> int | None:
+    avant = [s for s in theo if s < seq]
+    return max(avant) if avant else None
+
+
+def parse_trip_updates(raw: bytes, gtfs: GinkoGtfs, now: int, etat: dict | None = None) -> dict:
+    etat = {} if etat is None else etat
+    memoire = etat.setdefault("courses", {})
+    horodatage, courses = _lire_flux(raw, now)
+    fusion, reprises = _fusionner(courses, memoire, now)
+    vehicules: dict[str, dict] = {}
+    index: dict[tuple[str, str], list[tuple]] = {}
+
+    for trip_id, c in fusion.items():
         trip = gtfs.trips.get(trip_id)
-        if not trip or not tu.stop_time_update:
+        theo = gtfs.theoretical(trip_id)
+        if not trip or not theo:
+            continue
+        m = memoire.get(trip_id, {})
+        updates = [u for u in c["updates"] if u[0] >= m.get("seq", 0)]
+        if not updates:
             continue
         route_id = trip["route_id"]
         route = gtfs.routes.get(route_id, {})
         aller = trip["direction_id"] == "0"
-        theo = gtfs.theoretical(trip_id)
-        start_date = tu.trip.start_date or datetime.fromtimestamp(now).strftime("%Y%m%d")
-        midnight = int(datetime.strptime(start_date, "%Y%m%d").timestamp())
+        midnight = int(datetime.strptime(c["start_date"], "%Y%m%d").timestamp())
+        vid = c["vid"]
 
-        updates = list(tu.stop_time_update)
-        first = updates[0]
-        first_seq = first.stop_sequence
-        total = max(theo) if theo else first_seq
-        est_first = _event(first)
-        retard_first = (est_first - (midnight + theo[first_seq][1])) if (est_first and first_seq in theo) else None
-
-        for stu in updates:
-            est = _event(stu)
-            if est is None or stu.stop_sequence not in theo:
+        for seq, est, skipped in updates:
+            if est is None or seq not in theo:
                 continue
-            stop_id, dep = theo[stu.stop_sequence]
+            stop_id, dep = theo[seq]
             index.setdefault((route_id, stop_id), []).append(
-                (est, est - (midnight + dep), stu.schedule_relationship == SKIPPED, trip_id, aller, tu.vehicle.id)
+                (est, est - (midnight + dep), skipped, trip_id, aller, vid)
             )
 
-        started = first_seq > 1
-        has_vid = bool(tu.vehicle.id) and tu.vehicle.id != "0"
-        if not started and (not has_vid or est_first is None or est_first - now > TERMINUS_SEC):
-            continue
-        dans_sec = max(0, (est_first or now) - now)
+        first_seq, est_first, _ = updates[0]
+        retard = (est_first - (midnight + theo[first_seq][1])) if (est_first and first_seq in theo) else None
+        origine = min(theo)
+        depart_origine = midnight + theo[origine][1] + (retard or 0)
+        started = first_seq > origine and depart_origine <= now + DEPART_MARGE_SEC
+
         if not started:
+            if not vid or depart_origine - now > TERMINUS_SEC:
+                continue
             statut = "depart"
-        elif dans_sec <= A_QUAI_SEC:
-            statut = "a_quai"
+            dans_sec = max(0, depart_origine - now)
+            prev_seq, next_seq, frac = None, origine, 1.0
+            m["au_depart"] = True
         else:
-            statut = "en_route"
-        prev_seq = first_seq - 1
-        vid = tu.vehicle.id if has_vid else f"trip:{trip_id}"
+            if m.get("seq") != first_seq:
+                m["t_change"] = now if ("seq" in m or m.pop("au_depart", False)) else None
+                m["seq"] = first_seq
+                m["frac"] = 0.0
+                m["quai_depuis"] = None
+            dans_sec = max(0, est_first - now) if est_first else 0
+            if m.get("quai_depuis") is None and est_first is not None and est_first - now <= A_QUAI_SEC:
+                m["quai_depuis"] = now
+            a_quai = m.get("quai_depuis") is not None and now - m["quai_depuis"] <= A_QUAI_MAX_SEC
+            statut = "a_quai" if a_quai else "en_route"
+            prev_seq, next_seq = _seq_precedente(theo, first_seq), first_seq
+            if a_quai or m.get("frac", 0.0) >= 1.0:
+                frac = 1.0
+                m["frac"] = 1.0
+            else:
+                if m.get("t_change"):
+                    t_dep = m["t_change"]
+                elif prev_seq is not None:
+                    t_dep = midnight + theo[prev_seq][1] + (retard or 0)
+                else:
+                    t_dep = now
+                span = (est_first or now) - t_dep
+                frac = 1.0 if span <= 0 else max(0.0, min(1.0, (now - t_dep) / span))
+                frac = max(frac, m.get("frac", 0.0))
+                m["frac"] = frac
+
+        cle = vid or f"trip:{trip_id}"
+        total = max(theo)
         bus = {
-            "id": vid,
+            "id": cle,
             "num_vehicule": None,
             "ligne": route.get("num", route_id),
             "id_ligne": route_id,
             "couleurFond": route.get("couleurFond"),
             "couleurTexte": route.get("couleurTexte"),
             "mode": "tram" if route.get("type") == "0" else "bus",
-            **_position(gtfs, trip, theo, prev_seq, first_seq, midnight, est_first, retard_first, now, started),
+            **_position(gtfs, trip, theo, prev_seq, next_seq, frac),
             "prochains": [
                 {
-                    "nom": gtfs.stop_name(theo[u.stop_sequence][0]) if u.stop_sequence in theo else None,
-                    "heure": _event(u),
-                    "dans_sec": max(0, _event(u) - now) if _event(u) else None,
-                    "non_desservi": u.schedule_relationship == SKIPPED,
+                    "nom": gtfs.stop_name(theo[seq][0]) if seq in theo else None,
+                    "heure": est,
+                    "dans_sec": max(0, est - now) if est else None,
+                    "non_desservi": skipped,
                 }
-                for u in updates[:6]
+                for seq, est, skipped in updates[:6]
             ],
             "sens": "aller" if aller else "retour",
             "terminus": trip["headsign"],
-            "prochain_arret": gtfs.stop_name(theo[first_seq][0]) if first_seq in theo else None,
+            "prochain_arret": gtfs.stop_name(theo[next_seq][0]) if next_seq in theo else None,
             "arret_precedent": gtfs.stop_name(theo[prev_seq][0]) if prev_seq in theo else None,
             "statut": statut,
             "dans_sec": dans_sec,
-            "retard": retard_first,
+            "retard": retard,
             "arrets_restants": len(updates),
             "progression": round(first_seq / total, 2) if total else None,
             "trip_id": trip_id,
+            "memoire": trip_id not in courses,
         }
         rank = (0 if started else 1, dans_sec)
-        current = vehicules.get(vid)
+        current = vehicules.get(cle)
         if current is None or rank < current["_rank"]:
-            vehicules[vid] = {**bus, "_rank": rank}
+            vehicules[cle] = {**bus, "_rank": rank}
 
     for lst in index.values():
         lst.sort()
     return {
-        "horodatage": feed.header.timestamp or now,
+        "horodatage": horodatage,
         "vehicules": sorted(
             ({k: v for k, v in b.items() if k != "_rank"} for b in vehicules.values()),
             key=lambda b: (b["ligne"], b["dans_sec"]),
         ),
         "index": index,
+        "courses_flux": len(courses),
+        "courses_reprises": reprises,
     }
 
 
@@ -160,15 +233,25 @@ def parse_alerts(raw: bytes, gtfs: GinkoGtfs) -> list[dict]:
         al = entity.alert
         titre = al.header_text.translation[0].text if al.header_text.translation else ""
         texte = al.description_text.translation[0].text if al.description_text.translation else ""
-        lignes, arrets = [], []
+        lignes, arrets, arrets_ids = [], [], []
         for ie in al.informed_entity:
             if ie.route_id:
                 num = gtfs.routes.get(ie.route_id, {}).get("num", ie.route_id)
                 if num not in lignes:
                     lignes.append(num)
             if ie.stop_id:
-                nom = gtfs.stop_name(ie.stop_id)
-                if nom not in arrets:
+                sid = gtfs.resolve_stop(ie.stop_id) or ie.stop_id.strip()
+                if sid and sid not in arrets_ids:
+                    arrets_ids.append(sid)
+                nom = gtfs.resolve_stop_name(ie.stop_id)
+                if nom is None:
+                    if ie.stop_id not in _ARRETS_INCONNUS:
+                        _ARRETS_INCONNUS.add(ie.stop_id)
+                        _LOGGER.warning(
+                            "Ginko: arrêt %r de l'alerte %s introuvable dans le GTFS chargé (%d arrêts, chargé le %s)",
+                            ie.stop_id, entity.id, len(gtfs.stops), gtfs.loaded_at,
+                        )
+                elif nom not in arrets:
                     arrets.append(nom)
         periodes = [
             {
@@ -185,6 +268,7 @@ def parse_alerts(raw: bytes, gtfs: GinkoGtfs) -> list[dict]:
             "cause": rt.Alert.Cause.Name(al.cause),
             "lignes": lignes,
             "arrets": arrets,
+            "arrets_ids": arrets_ids,
             "periodes": periodes,
         })
     return alertes
